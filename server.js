@@ -13,6 +13,8 @@
  *   DATA_DIR       dossier de stockage (défaut ./data)
  *   CALENDY_TOKEN  jeton d'accès à l'API (optionnel mais recommandé hors poste local)
  *   CALENDY_NO_SEED=1  ne pas charger seed.json au premier démarrage
+ *
+ * Les photos des posts sont rangées dans DATA_DIR/images (à sauvegarder avec data.json).
  */
 
 const http = require('node:http');
@@ -25,6 +27,7 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
+const IMAGES_DIR = path.join(DATA_DIR, 'images');
 
 /**
  * Nettoie un jeton : retire les espaces et retours à la ligne aux extrémités, puis une paire de
@@ -133,6 +136,102 @@ function statut(value) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Photos                                                             */
+/* ------------------------------------------------------------------ */
+
+// Une photo facultative par « visuel » : Instagram et Facebook partagent la même, LinkedIn a la sienne.
+const PHOTO_SLOTS = ['meta', 'linkedin'];
+const PHOTO_MAX = 8 * 1024 * 1024;
+
+/** Reconnaît un JPEG ou un PNG d'après son contenu (pas d'après ce que dit le client) et lit ses dimensions. */
+function lireImage(buf) {
+  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47 && buf.readUInt32BE(4) === 0x0d0a1a0a && buf.toString('latin1', 12, 16) === 'IHDR') {
+    return { type: 'image/png', ext: 'png', largeur: buf.readUInt32BE(16), hauteur: buf.readUInt32BE(20) };
+  }
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) { i++; continue; }
+      const m = buf[i + 1];
+      if (m === 0xff) { i++; continue; }
+      if (m === 0x01 || (m >= 0xd0 && m <= 0xd9)) { i += 2; continue; }
+      if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc) {
+        return { type: 'image/jpeg', ext: 'jpg', hauteur: buf.readUInt16BE(i + 5), largeur: buf.readUInt16BE(i + 7) };
+      }
+      i += 2 + buf.readUInt16BE(i + 2);
+    }
+  }
+  return null;
+}
+
+const photosVides = () => ({ meta: null, linkedin: null });
+
+function normaliserPhotos(photos) {
+  const out = photosVides();
+  for (const slot of PHOTO_SLOTS) {
+    const f = photos && photos[slot];
+    if (f && typeof f.fichier === 'string' && /^[\w.-]+$/.test(f.fichier)) out[slot] = f;
+  }
+  return out;
+}
+
+const cheminPhoto = (fichier) => path.join(IMAGES_DIR, path.basename(fichier));
+
+function supprimerFichierPhoto(photo) {
+  if (!photo) return;
+  try {
+    fs.unlinkSync(cheminPhoto(photo.fichier));
+  } catch {
+    /* déjà absent */
+  }
+}
+
+function lireCorpsBrut(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    let tropLourd = false;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size > max * 4) return req.destroy(); // abus manifeste : on coupe
+      if (size > max) tropLourd = true; // on laisse finir l'envoi pour pouvoir répondre proprement
+      else chunks.push(c);
+    });
+    req.on('end', () => {
+      if (tropLourd) reject(new HttpError(413, `Photo trop lourde (maximum ${Math.round(max / 1048576)} Mo).`));
+      else resolve(Buffer.concat(chunks));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function enregistrerPhoto(req, id, slot) {
+  const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+  if (type !== 'image/jpeg' && type !== 'image/png') {
+    throw new HttpError(415, 'Content-Type image/jpeg ou image/png requis.');
+  }
+  if (!db.posts.some((p) => p.id === id)) throw new HttpError(404, 'Post introuvable.');
+  const buf = await lireCorpsBrut(req, PHOTO_MAX);
+  const info = lireImage(buf);
+  if (!info || info.type !== type || !info.largeur || !info.hauteur || info.largeur > 20000 || info.hauteur > 20000) {
+    throw new HttpError(400, 'Le fichier n’est pas une image JPEG ou PNG valide.');
+  }
+  const post = db.posts.find((p) => p.id === id);
+  if (!post) throw new HttpError(404, 'Post introuvable.');
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
+  const fichier = `${id}-${slot}-${crypto.randomBytes(3).toString('hex')}.${info.ext}`;
+  const tmp = `${cheminPhoto(fichier)}.tmp`;
+  fs.writeFileSync(tmp, buf);
+  fs.renameSync(tmp, cheminPhoto(fichier));
+  post.photos = normaliserPhotos(post.photos);
+  const ancienne = post.photos[slot];
+  post.photos[slot] = { fichier, type: info.type, largeur: info.largeur, hauteur: info.hauteur, octets: buf.length };
+  saveDb();
+  supprimerFichierPhoto(ancienne);
+  return post;
+}
+
+/* ------------------------------------------------------------------ */
 /* Stockage                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -140,17 +239,20 @@ let db = { evenements: [], posts: [] };
 
 function loadDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(IMAGES_DIR, { recursive: true });
   if (fs.existsSync(DATA_FILE)) {
     const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     db = {
       evenements: Array.isArray(parsed.evenements) ? parsed.evenements : [],
       posts: Array.isArray(parsed.posts) ? parsed.posts : [],
     };
+    db.posts.forEach((p) => { p.photos = normaliserPhotos(p.photos); });
     return;
   }
   const seedFile = path.join(__dirname, 'seed.json');
   if (!process.env.CALENDY_NO_SEED && fs.existsSync(seedFile)) {
     db = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+    db.posts.forEach((p) => { p.photos = normaliserPhotos(p.photos); });
     saveDb();
     console.log(`Premier démarrage : ${db.posts.length} posts et ${db.evenements.length} événements chargés depuis seed.json`);
   } else {
@@ -207,6 +309,7 @@ function cleanPost(input, current = null) {
         angle: '',
         vigilance: '',
         statut: 'idee',
+        photos: photosVides(),
       };
   if (!current || has(input, 'titre')) out.titre = str(input.titre, 'titre', { required: true, max: 200 });
   if (!current || has(input, 'datePublication')) {
@@ -333,7 +436,18 @@ function styleHeader(row) {
   });
 }
 
-async function buildWorkbook(posts) {
+/** Estimation (en points) de la hauteur d'une ligne dont le texte passe à la ligne, pour ne rien couper à côté d'une photo. */
+function hauteurTexte(row, colonnes) {
+  let lignes = 1;
+  for (const [cle, largeur] of colonnes) {
+    const texte = String(row.getCell(cle).value ?? '');
+    const n = texte.split('\n').reduce((tot, para) => tot + Math.max(1, Math.ceil(para.length / largeur)), 0);
+    lignes = Math.max(lignes, n);
+  }
+  return lignes * 15 + 6;
+}
+
+async function buildWorkbook(posts, { photos = true } = {}) {
   const evById = new Map(db.evenements.map((e) => [e.id, e]));
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Calendy';
@@ -341,6 +455,9 @@ async function buildWorkbook(posts) {
   wb.created = new Date();
 
   /* Feuille 1 : posts */
+  // Colonnes photo seulement si au moins un post exporté en a une.
+  const photoDe = (p, slot) => (normaliserPhotos(p.photos)[slot] ? p.photos[slot] : null);
+  const avecPhotos = photos && posts.some((p) => photoDe(p, 'meta') || photoDe(p, 'linkedin'));
   const ws = wb.addWorksheet('Calendrier éditorial', { views: [{ state: 'frozen', ySplit: 1, xSplit: 3 }] });
   ws.columns = [
     { header: 'Date de publication', key: 'date', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
@@ -353,6 +470,12 @@ async function buildWorkbook(posts) {
     { header: 'Description / légende', key: 'description', width: 70 },
     { header: 'Hashtags', key: 'hashtags', width: 34 },
     { header: 'Idée visuelle', key: 'image', width: 40 },
+    ...(avecPhotos
+      ? [
+          { header: 'Photo Instagram + Facebook', key: 'photoMeta', width: 24 },
+          { header: 'Photo LinkedIn', key: 'photoLinkedin', width: 24 },
+        ]
+      : []),
     { header: 'Événement', key: 'evenement', width: 30 },
     { header: "Date de l'événement", key: 'dateEvenement', width: 26 },
     { header: "Explication de l'événement", key: 'explication', width: 52 },
@@ -386,6 +509,33 @@ async function buildWorkbook(posts) {
     row.getCell('titre').font = { ...FONT, bold: true };
     row.getCell('statut').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STATUT_COULEURS[p.statut] } };
     row.getCell('statut').font = { ...FONT, bold: true };
+
+    if (avecPhotos) {
+      const COLONNES_TEXTE = [['titre', 38], ['description', 70], ['hashtags', 34], ['image', 40], ['evenement', 30], ['explication', 52], ['angle', 40], ['vigilance', 40]];
+      let hauteurPhoto = 0;
+      for (const [slot, cle] of [['meta', 'photoMeta'], ['linkedin', 'photoLinkedin']]) {
+        const ph = photoDe(p, slot);
+        if (!ph) continue;
+        let buffer;
+        try {
+          buffer = fs.readFileSync(cheminPhoto(ph.fichier));
+        } catch {
+          continue; // fichier manquant : on exporte le post sans la photo
+        }
+        const echelle = Math.min(150 / ph.largeur, 150 / ph.hauteur, 1);
+        const largeur = Math.round(ph.largeur * echelle);
+        const hauteur = Math.round(ph.hauteur * echelle);
+        const imageId = wb.addImage({ buffer, extension: ph.type === 'image/png' ? 'png' : 'jpeg' });
+        ws.addImage(imageId, {
+          tl: { col: ws.getColumn(cle).number - 1 + 0.04, row: row.number - 1 + 0.03 },
+          ext: { width: largeur, height: hauteur },
+          editAs: 'oneCell',
+        });
+        hauteurPhoto = Math.max(hauteurPhoto, hauteur * 0.75 + 8);
+      }
+      // Hauteurs fixes pour toutes les lignes : les photos restent ainsi ancrées à la bonne ligne dans Excel comme dans LibreOffice.
+      row.height = Math.max(hauteurPhoto, hauteurTexte(row, COLONNES_TEXTE), 24);
+    }
   }
   if (posts.length) ws.autoFilter = { from: 'A1', to: { row: 1, column: ws.columns.length } };
   ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
@@ -525,14 +675,41 @@ route('DELETE', /^\/api\/posts\/([\w-]+)$/, ({ params }) => {
   if (i < 0) throw new HttpError(404, 'Post introuvable.');
   const [removed] = db.posts.splice(i, 1);
   saveDb();
+  PHOTO_SLOTS.forEach((slot) => supprimerFichierPhoto(removed.photos && removed.photos[slot]));
   return { ok: true, supprime: removed.id };
 });
 
-/* Export Excel : ?statuts=valide,publie (défaut) | all  &du=AAAA-MM-JJ &au=AAAA-MM-JJ */
+// Photo d'un post : slot « meta » (Instagram + Facebook) ou « linkedin ». L'envoi (PUT, corps = image brute) est traité dans handle().
+route('GET', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/, ({ params }) => {
+  const post = db.posts.find((p) => p.id === params[0]);
+  if (!post) throw new HttpError(404, 'Post introuvable.');
+  const photo = normaliserPhotos(post.photos)[params[1]];
+  if (!photo) throw new HttpError(404, 'Pas de photo pour ce visuel.');
+  let raw;
+  try {
+    raw = fs.readFileSync(cheminPhoto(photo.fichier));
+  } catch {
+    throw new HttpError(404, 'Fichier photo introuvable sur le serveur.');
+  }
+  return { raw, type: photo.type, inline: true, cache: 'private, max-age=3600' };
+});
+
+route('DELETE', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/, ({ params }) => {
+  const post = db.posts.find((p) => p.id === params[0]);
+  if (!post) throw new HttpError(404, 'Post introuvable.');
+  post.photos = normaliserPhotos(post.photos);
+  const ancienne = post.photos[params[1]];
+  post.photos[params[1]] = null;
+  saveDb();
+  supprimerFichierPhoto(ancienne);
+  return post;
+});
+
+/* Export Excel : ?statuts=valide,publie (défaut) | all  &du=AAAA-MM-JJ &au=AAAA-MM-JJ  &photos=0 (sans les photos) */
 route('GET', /^\/api\/export\.xlsx$/, async ({ query }) => {
   const statuts = !query.statuts ? ['valide', 'publie'] : query.statuts === 'all' ? STATUTS : query.statuts.split(',');
   const posts = filterPosts({ statut: statuts.join(','), du: query.du, au: query.au });
-  const buffer = await buildWorkbook(posts);
+  const buffer = await buildWorkbook(posts, { photos: query.photos !== '0' });
   const stamp = new Date().toISOString().slice(0, 10);
   const periode = query.du || query.au ? `_${query.du || 'debut'}_${query.au || 'fin'}` : '';
   return {
@@ -619,7 +796,7 @@ async function handle(req, res) {
       'Content-Length': html.length,
       'Cache-Control': 'no-cache',
       'Content-Security-Policy':
-        "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; font-src data:; connect-src 'self'; frame-ancestors 'none'",
+        "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src data:; connect-src 'self'; frame-ancestors 'none'",
     });
     return res.end(html);
   }
@@ -642,6 +819,10 @@ async function handle(req, res) {
     return send(res, 401, { error: 'Jeton d’accès manquant ou invalide.' }, SECURITY_HEADERS);
   }
 
+  // Envoi d'une photo : le corps est l'image elle-même (pas du JSON).
+  const mPhoto = req.method === 'PUT' && pathname.match(/^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/);
+  if (mPhoto) return send(res, 200, await enregistrerPhoto(req, mPhoto[1], mPhoto[2]), SECURITY_HEADERS);
+
   for (const r of routes) {
     if (r.method !== req.method) continue;
     const match = pathname.match(r.pattern);
@@ -652,6 +833,15 @@ async function handle(req, res) {
     }
     const body = hasBody ? await readBody(req) : undefined;
     const result = await r.handler({ params: match.slice(1), query, body });
+    if (result && result.raw && result.inline) {
+      res.writeHead(200, {
+        ...SECURITY_HEADERS,
+        'Content-Type': result.type,
+        'Content-Length': result.raw.length,
+        'Cache-Control': result.cache || 'no-store',
+      });
+      return res.end(result.raw);
+    }
     if (result && result.raw) {
       const name = encodeURIComponent(result.filename);
       res.writeHead(200, {

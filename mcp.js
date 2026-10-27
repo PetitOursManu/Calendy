@@ -29,16 +29,17 @@ const TOKEN = (process.env.CALENDY_TOKEN || '').trim().replace(/^(["'])([\s\S]*)
 /* Appels à l'API                                                     */
 /* ------------------------------------------------------------------ */
 
-async function call(method, route, body, { raw = false } = {}) {
+async function call(method, route, body, { raw = false, contentType = null } = {}) {
   const headers = {};
   if (TOKEN) headers.Authorization = `Bearer ${TOKEN}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const binaire = Buffer.isBuffer(body); // photo : image brute
+  if (body !== undefined) headers['Content-Type'] = binaire ? contentType : 'application/json';
   let res;
   try {
     res = await fetch(BASE_URL + route, {
       method,
       headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : binaire ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(20000),
     });
   } catch (err) {
@@ -108,7 +109,8 @@ Tu proposes des idées de posts ; c'est l'utilisateur qui décide lesquels sont 
 - Commence par apercu pour voir l'état du calendrier, puis lister_evenements avant d'en créer un (évite les doublons).
 - Rattache chaque post à son événement (eventId) quand il y en a un ; sinon laisse vide (contenu « coulisses »).
 - Crée toujours les posts avec le statut « idee » (c'est le défaut). Ne passe un post à « valide » ou « refuse » que si l'utilisateur le demande explicitement.
-- description = légende prête à publier, sans hashtags ; hashtags à part ; imageIdee = description de la photo à prévoir (pas d'image réelle).
+- description = légende prête à publier, sans hashtags ; hashtags à part ; imageIdee = description de la photo à prévoir.
+- Photos : facultatives, une par visuel (Instagram + Facebook partagent la même, LinkedIn a la sienne). Tu ne crées pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur.
 - Sujets sensibles (santé mentale, handicap psychique) : message centré sur le travail et la fierté collective, jamais de diagnostic ni de personne identifiable, et mets un point de vigilance qui demande une validation avant publication. Ne nomme pas une entreprise partenaire sans son accord.`;
 
 const server = new McpServer({ name: 'calendy', version: '1.0.0' }, { instructions: INSTRUCTIONS });
@@ -220,6 +222,51 @@ server.registerTool(
   safe(async ({ id, ...champs }) => ok(await call('PUT', `/api/posts/${encodeURIComponent(id)}`, champs))),
 );
 
+const VISUELS = { instagram_facebook: 'meta', linkedin: 'linkedin' };
+const visuelSchema = z.enum(['instagram_facebook', 'linkedin']).describe('instagram_facebook = la photo commune à Instagram et Facebook ; linkedin = la photo de LinkedIn.');
+
+server.registerTool(
+  'ajouter_photo',
+  {
+    title: 'Ajouter ou remplacer la photo d’un post',
+    description:
+      "Joint une photo (JPEG ou PNG, 8 Mo maximum) à un post, à partir d'un fichier de cet ordinateur. Une photo par visuel : une pour Instagram + Facebook, une pour LinkedIn. Remplace la photo existante du même visuel. Les photos sont facultatives. À n'utiliser que si l'utilisateur indique le fichier à utiliser.",
+    inputSchema: {
+      id: z.string().describe('Identifiant du post.'),
+      visuel: visuelSchema,
+      chemin: z.string().describe('Chemin complet du fichier image sur cet ordinateur (.jpg, .jpeg ou .png).'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  safe(async ({ id, visuel, chemin }) => {
+    const ext = path.extname(chemin).toLowerCase();
+    const type = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' }[ext];
+    if (!type) throw new Error('Format non pris en charge : utilise un fichier .jpg, .jpeg ou .png.');
+    let buf;
+    try {
+      buf = fs.readFileSync(path.resolve(chemin));
+    } catch {
+      throw new Error(`Fichier introuvable ou illisible : ${chemin}`);
+    }
+    const post = await call('PUT', `/api/posts/${encodeURIComponent(id)}/photo/${VISUELS[visuel]}`, buf, { contentType: type });
+    return ok({ id: post.id, titre: post.titre, photos: post.photos });
+  }),
+);
+
+server.registerTool(
+  'retirer_photo',
+  {
+    title: 'Retirer la photo d’un post',
+    description: "Retire la photo d'un visuel (Instagram + Facebook, ou LinkedIn) d'un post. Le post lui-même est conservé. Sur demande de l'utilisateur uniquement.",
+    inputSchema: { id: z.string().describe('Identifiant du post.'), visuel: visuelSchema },
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+  },
+  safe(async ({ id, visuel }) => {
+    const post = await call('DELETE', `/api/posts/${encodeURIComponent(id)}/photo/${VISUELS[visuel]}`);
+    return ok({ id: post.id, titre: post.titre, photos: post.photos });
+  }),
+);
+
 server.registerTool(
   'changer_statut',
   {
@@ -315,12 +362,13 @@ server.registerTool(
       statuts: z.array(z.enum(STATUTS)).optional().describe('Statuts à inclure. Par défaut : valide et publie.'),
       du: dateSchema('Date de publication minimale (incluse).').optional(),
       au: dateSchema('Date de publication maximale (incluse).').optional(),
+      avecPhotos: z.boolean().optional().describe('Inclure les photos des posts dans le fichier. Par défaut : oui (fichier plus lourd).'),
       dossier: z.string().optional().describe('Dossier de destination. Par défaut : le dossier Téléchargements.'),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
-  safe(async ({ statuts, du, au, dossier }) => {
-    const res = await call('GET', `/api/export.xlsx${query({ statuts: statuts && statuts.join(','), du, au })}`, undefined, { raw: true });
+  safe(async ({ statuts, du, au, dossier, avecPhotos }) => {
+    const res = await call('GET', `/api/export.xlsx${query({ statuts: statuts && statuts.join(','), du, au, photos: avecPhotos === false ? '0' : undefined })}`, undefined, { raw: true });
     const cd = res.headers.get('content-disposition') || '';
     const m = cd.match(/filename\*=UTF-8''([^;]+)/);
     const nom = m ? decodeURIComponent(m[1]) : 'Calendrier_editorial_Elisa30.xlsx';

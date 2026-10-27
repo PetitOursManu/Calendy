@@ -56,8 +56,8 @@ test('le connecteur annonce ses outils et ses consignes', async () => {
   const { tools } = await client.listTools();
   const noms = tools.map((t) => t.name).sort();
   assert.deepEqual(noms, [
-    'apercu', 'changer_statut', 'creer_evenement', 'creer_post', 'exporter_excel', 'lire_post',
-    'lister_evenements', 'lister_posts', 'modifier_evenement', 'modifier_post', 'supprimer_evenement', 'supprimer_post',
+    'ajouter_photo', 'apercu', 'changer_statut', 'creer_evenement', 'creer_post', 'exporter_excel', 'lire_post',
+    'lister_evenements', 'lister_posts', 'modifier_evenement', 'modifier_post', 'retirer_photo', 'supprimer_evenement', 'supprimer_post',
   ]);
   assert.ok(tools.every((t) => t.description && t.description.length > 30), 'chaque outil est décrit');
   assert.equal(tools.find((t) => t.name === 'supprimer_post').annotations.destructiveHint, true);
@@ -120,6 +120,32 @@ test('événements : création, lien avec un post, modification, suppression', a
   const detach = donnees(await appel('supprimer_evenement', { id: ev.id }));
   assert.equal(detach.postsDetaches, 1);
   assert.equal(donnees(await appel('lire_post', { id: post.id })).eventId, null);
+});
+
+test('ajouter_photo et retirer_photo : une photo par visuel, à partir d’un fichier local', async () => {
+  const jpg = path.join(exportDir, 'photo.jpg');
+  fs.writeFileSync(jpg, Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAeACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDnKKKK6T2wooooAKKKKACiiigAooooAKKKKAP/2Q==', 'base64'));
+  const post = donnees(await appel('creer_post', { titre: 'Post MCP photo', datePublication: '2026-11-12', plateformes: ['Instagram', 'LinkedIn'] }));
+  const ajoute = donnees(await appel('ajouter_photo', { id: post.id, visuel: 'instagram_facebook', chemin: jpg }));
+  assert.equal(ajoute.photos.meta.type, 'image/jpeg');
+  assert.equal(ajoute.photos.linkedin, null);
+  const lu = donnees(await appel('lire_post', { id: post.id }));
+  assert.ok(lu.photos.meta, 'la photo apparaît dans lire_post');
+
+  const mauvais = await appel('ajouter_photo', { id: post.id, visuel: 'linkedin', chemin: path.join(exportDir, 'absent.jpg') });
+  assert.equal(mauvais.isError, true);
+  assert.match(texte(mauvais), /introuvable/);
+  const gif = path.join(exportDir, 'photo.gif');
+  fs.writeFileSync(gif, 'GIF89a');
+  const refus = await appel('ajouter_photo', { id: post.id, visuel: 'linkedin', chemin: gif });
+  assert.match(texte(refus), /\.jpg, \.jpeg ou \.png/);
+  const faux = path.join(exportDir, 'faux.png');
+  fs.writeFileSync(faux, 'ceci n’est pas une image');
+  assert.equal((await appel('ajouter_photo', { id: post.id, visuel: 'linkedin', chemin: faux })).isError, true, 'contenu invalide refusé par le serveur');
+
+  const retire = donnees(await appel('retirer_photo', { id: post.id, visuel: 'instagram_facebook' }));
+  assert.equal(retire.photos.meta, null);
+  await appel('supprimer_post', { id: post.id });
 });
 
 test('erreurs : messages clairs plutôt que des plantages', async () => {

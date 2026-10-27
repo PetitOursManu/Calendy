@@ -114,6 +114,103 @@ test('un jeton mal formé dans la variable d’environnement reste utilisable', 
   }
 });
 
+// Petites images réelles (JPEG 40×30 et PNG 40×30) pour les tests de photos.
+const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAeACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDnKKKK6T2wooooAKKKKACiiigAooooAKKKKAP/2Q==', 'base64');
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAAO0lEQVR4Xu3QUQ0AMAyE0K5Kam12pnqpCe6HZ4CE8+ZWQieiyzDG1RhXY1yNcTXG1RhXY1yNcTUmtvoDgI8BR1lq6aUAAAAASUVORK5CYII=', 'base64');
+
+async function envoyerPhoto(id, slot, corps, type) {
+  const res = await fetch(`${BASE}/api/posts/${id}/photo/${slot}`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': type },
+    body: corps,
+  });
+  return { status: res.status, json: await res.json() };
+}
+
+test('photos : facultatives, une par visuel (Instagram+Facebook / LinkedIn), remplaçables et supprimables', async () => {
+  const { json: post } = await api('POST', '/api/posts', {
+    titre: 'Test photo', datePublication: '2026-11-05', plateformes: ['Instagram', 'Facebook', 'LinkedIn'],
+  });
+  assert.deepEqual(post.photos, { meta: null, linkedin: null }, 'sans photo par défaut');
+  assert.equal((await api('GET', `/api/posts/${post.id}/photo/meta`)).status, 404);
+
+  const m = await envoyerPhoto(post.id, 'meta', JPEG, 'image/jpeg');
+  assert.equal(m.status, 200);
+  assert.equal(m.json.photos.meta.largeur, 40);
+  assert.equal(m.json.photos.meta.hauteur, 30);
+  assert.equal(m.json.photos.linkedin, null);
+  const l = await envoyerPhoto(post.id, 'linkedin', PNG, 'image/png');
+  assert.equal(l.json.photos.linkedin.type, 'image/png');
+  assert.notEqual(l.json.photos.linkedin.fichier, l.json.photos.meta.fichier, 'deux visuels distincts');
+
+  const lue = await api('GET', `/api/posts/${post.id}/photo/meta`, undefined, { raw: true });
+  assert.equal(lue.status, 200);
+  assert.equal(lue.headers.get('content-type'), 'image/jpeg');
+  assert.deepEqual(Buffer.from(await lue.arrayBuffer()), JPEG);
+
+  // Remplacer : l'ancien fichier disparaît du disque
+  const ancien = m.json.photos.meta.fichier;
+  const r = await envoyerPhoto(post.id, 'meta', PNG, 'image/png');
+  assert.notEqual(r.json.photos.meta.fichier, ancien);
+  assert.ok(!fs.existsSync(path.join(dataDir, 'images', ancien)), 'ancien fichier supprimé');
+
+  // Modifier le post ne touche pas aux photos, et le JSON ne peut pas les forger
+  const maj = await api('PUT', `/api/posts/${post.id}`, { titre: 'Test photo 2', photos: { meta: { fichier: '../../etc/passwd' } } });
+  assert.equal(maj.json.photos.meta.fichier, r.json.photos.meta.fichier);
+
+  // Suppression d'une photo, puis du post (le fichier restant est effacé)
+  const del = await api('DELETE', `/api/posts/${post.id}/photo/meta`);
+  assert.equal(del.json.photos.meta, null);
+  assert.ok(del.json.photos.linkedin, 'la photo LinkedIn reste');
+  const fichierLinkedin = l.json.photos.linkedin.fichier;
+  assert.ok(fs.existsSync(path.join(dataDir, 'images', fichierLinkedin)));
+  await api('DELETE', `/api/posts/${post.id}`);
+  assert.ok(!fs.existsSync(path.join(dataDir, 'images', fichierLinkedin)), 'fichier effacé avec le post');
+});
+
+test('photos : refus des fichiers qui ne sont pas des images JPEG/PNG', async () => {
+  const { json: post } = await api('POST', '/api/posts', { titre: 'Test refus', datePublication: '2026-11-06', plateformes: ['Instagram'] });
+  try {
+  assert.equal((await envoyerPhoto(post.id, 'meta', Buffer.from('<?php echo 1; ?>'), 'image/jpeg')).status, 400, 'faux JPEG');
+  assert.equal((await envoyerPhoto(post.id, 'meta', JPEG, 'image/png')).status, 400, 'type annoncé ≠ contenu');
+  assert.equal((await envoyerPhoto(post.id, 'meta', Buffer.from('GIF89a'), 'image/gif')).status, 415, 'GIF non accepté');
+  assert.equal((await envoyerPhoto(post.id, 'meta', Buffer.alloc(9 * 1024 * 1024, 1), 'image/jpeg')).status, 413, 'trop lourd');
+  assert.equal((await envoyerPhoto('po-inconnu', 'meta', JPEG, 'image/jpeg')).status, 404);
+  const sans = await fetch(`${BASE}/api/posts/${post.id}/photo/meta`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: JPEG });
+  assert.equal(sans.status, 401, 'jeton exigé');
+  assert.deepEqual((await api('GET', `/api/posts/${post.id}`)).json.photos, { meta: null, linkedin: null });
+  } finally {
+    await api('DELETE', `/api/posts/${post.id}`);
+  }
+});
+
+test('export Excel : les photos sont intégrées (colonnes seulement si besoin) et peuvent être exclues', async () => {
+  const { json: post } = await api('POST', '/api/posts', {
+    titre: 'Export photo', datePublication: '2026-11-07', plateformes: ['Instagram', 'LinkedIn'], statut: 'valide',
+  });
+  const lire = async (url) => {
+    const res = await api('GET', url, undefined, { raw: true });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+    return wb;
+  };
+  const sans = await lire('/api/export.xlsx?statuts=valide&du=2026-11-07&au=2026-11-07');
+  assert.ok(!sans.getWorksheet('Calendrier éditorial').getRow(1).values.includes('Photo LinkedIn'), 'pas de colonne sans photo');
+
+  await envoyerPhoto(post.id, 'meta', JPEG, 'image/jpeg');
+  await envoyerPhoto(post.id, 'linkedin', PNG, 'image/png');
+  const avec = await lire('/api/export.xlsx?statuts=valide&du=2026-11-07&au=2026-11-07');
+  const ws = avec.getWorksheet('Calendrier éditorial');
+  assert.ok(ws.getRow(1).values.includes('Photo Instagram + Facebook'));
+  assert.ok(ws.getRow(1).values.includes('Photo LinkedIn'));
+  assert.equal(ws.getImages().length, 2, 'deux images intégrées');
+  assert.ok(ws.getRow(2).height > 20, 'ligne assez haute pour la photo');
+
+  const exclues = await lire('/api/export.xlsx?statuts=valide&du=2026-11-07&au=2026-11-07&photos=0');
+  assert.equal(exclues.getWorksheet('Calendrier éditorial').getImages().length, 0);
+  await api('DELETE', `/api/posts/${post.id}`);
+});
+
 test('premier démarrage : seed chargé (18 posts, 8 événements)', async () => {
   const { json } = await api('GET', '/api/state');
   assert.equal(json.posts.length, 18);
