@@ -1,0 +1,390 @@
+{
+  "evenements": [
+    {
+      "id": "ev-octobre-rose",
+      "nom": "Octobre Rose",
+      "dateDebut": "2026-10-01",
+      "dateFin": "2026-10-31",
+      "explication": "Campagne nationale de sensibilisation au dépistage du cancer du sein.",
+      "lienElisa30": "Geste de solidarité collectif, transversal à toute l'équipe."
+    },
+    {
+      "id": "ev-fete-science",
+      "nom": "Fête de la Science (35e édition)",
+      "dateDebut": "2026-10-02",
+      "dateFin": "2026-10-12",
+      "explication": "Thème national 2026 : « Saveurs savantes ». Animations gratuites dans toute la France.",
+      "lienElisa30": "Clin d'œil possible avec l'atelier Cuisine (le thème parle littéralement de saveurs)."
+    },
+    {
+      "id": "ev-aidants",
+      "nom": "Journée nationale des aidants",
+      "dateDebut": "2026-10-06",
+      "dateFin": "2026-10-06",
+      "explication": "Journée dédiée aux aidants familiaux (11 millions de personnes en France).",
+      "lienElisa30": "Occasion de saluer, avec la nuance nécessaire, le travail de vos encadrants/moniteurs."
+    },
+    {
+      "id": "ev-sante-mentale",
+      "nom": "Journée mondiale de la santé mentale",
+      "dateDebut": "2026-10-10",
+      "dateFin": "2026-10-10",
+      "explication": "Journée de sensibilisation portée par l'OMS depuis 1992.",
+      "lienElisa30": "Sujet directement lié au public accompagné par l'ESAT (handicap psychique) : à traiter avec beaucoup de délicatesse, message centré sur le travail et la fierté, jamais sur le diagnostic."
+    },
+    {
+      "id": "ev-semaine-gout",
+      "nom": "Semaine du Goût (37e édition)",
+      "dateDebut": "2026-10-12",
+      "dateFin": "2026-10-18",
+      "explication": "Rendez-vous national autour de l'alimentation et du goût, créé en 1990.",
+      "lienElisa30": "Semaine phare pour l'atelier Cuisine et le restaurant Chez Elisa30."
+    },
+    {
+      "id": "ev-alimentation",
+      "nom": "Journée mondiale de l'alimentation",
+      "dateDebut": "2026-10-16",
+      "dateFin": "2026-10-16",
+      "explication": "Journée FAO sur l'alimentation durable, tombe pendant la Semaine du Goût.",
+      "lienElisa30": "Angle anti-gaspillage / produits de saison pour la cuisine."
+    },
+    {
+      "id": "ev-halloween",
+      "nom": "Halloween",
+      "dateDebut": "2026-10-31",
+      "dateFin": "2026-10-31",
+      "explication": "Fête populaire, forte visibilité sur les réseaux sociaux.",
+      "lienElisa30": "Animation restaurant + décoration, contenu léger et fédérateur."
+    },
+    {
+      "id": "ev-duoday",
+      "nom": "DuoDay 2026",
+      "dateDebut": "2026-11-19",
+      "dateFin": "2026-11-19",
+      "explication": "Pendant la Semaine européenne pour l'Emploi des Personnes Handicapées (16-22 nov.). Inscriptions déjà ouvertes en octobre.",
+      "lienElisa30": "Temps fort majeur pour un ESAT : à teaser fin octobre pour préparer le terrain."
+    }
+  ],
+  "posts": [
+    {
+      "id": "po-20261001",
+      "eventId": "ev-octobre-rose",
+      "titre": "Octobre Rose : toute l'équipe se met au rose",
+      "description": "🎗️ Octobre Rose, c'est parti !\nCe mois-ci, toute l'équipe d'Elisa30 se met au rose pour soutenir la lutte contre le cancer du sein.\nUn ruban, un geste, une pensée pour toutes celles et ceux qui sont concernés de près ou de loin.\nEt vous, comment vous mobilisez-vous ce mois-ci ? 💬",
+      "hashtags": "",
+      "imageIdee": "Photo d'équipe avec un détail rose (tablier, ruban) devant le restaurant ou en cuisine",
+      "datePublication": "2026-10-01",
+      "heure": "11:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Transversal",
+      "angle": "Geste de solidarité simple, sans en faire un sujet médical",
+      "vigilance": "Ne pas annoncer d'action concrète (don, dépistage...) tant qu'elle n'est pas confirmée en interne — rester sur un message de soutien symbolique si rien n'est prévu",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261002",
+      "eventId": "ev-fete-science",
+      "titre": "Fête de la Science : les saveurs savantes de l'atelier Cuisine",
+      "description": "🔬🍽️ Le saviez-vous ? La Fête de la Science 2026 a pour thème... les Saveurs Savantes !\nChez nous, la science est aussi dans les casseroles : dosages, textures, cuissons... nos cuisiniers en formation à l'atelier Cuisine sont un peu des chimistes du quotidien.\nUne bonne raison de plus d'être fiers de ce qui se prépare en coulisses 👩‍🍳👨‍🍳",
+      "hashtags": "",
+      "imageIdee": "Photo d'un geste technique en cuisine (dressage, découpe, cuisson)",
+      "datePublication": "2026-10-02",
+      "heure": "12:00",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Cuisine",
+      "angle": "Clin d'œil ludique entre le thème national et le métier de cuisine",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261006",
+      "eventId": "ev-aidants",
+      "titre": "Journée des aidants : merci à nos encadrants",
+      "description": "Aujourd'hui, 6 octobre, c'est la Journée nationale des aidants.\n\nCette journée met à l'honneur celles et ceux qui accompagnent au quotidien un proche en perte d'autonomie ou en situation de handicap — un rôle essentiel, trop souvent invisible.\n\nElle nous donne aussi l'occasion de saluer un métier différent mais tout aussi engagé : celui de nos encadrants et moniteurs d'atelier à l'ESAT Elisa 30. Chaque jour, ils accompagnent les travailleurs en situation de handicap psychique dans leur parcours professionnel, avec patience, exigence et bienveillance.\n\nMerci à toute l'équipe encadrante pour son engagement au quotidien.",
+      "hashtags": "#Handicap #ESAT #InclusionProfessionnelle #Accompagnement",
+      "imageIdee": "Photo d'un encadrant en situation de travail avec un travailleur (droit à l'image requis)",
+      "datePublication": "2026-10-06",
+      "heure": "08:30",
+      "plateformes": [
+        "LinkedIn"
+      ],
+      "atelier": "Encadrants",
+      "angle": "Hommage aux encadrants/moniteurs d'atelier, en écho (nuancé) à cette journée",
+      "vigilance": "Bien distinguer \"aidants familiaux\" (le sujet du jour) et \"encadrants professionnels\" (votre équipe) pour ne pas créer de confusion",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261008",
+      "eventId": null,
+      "titre": "Espaces verts : on prépare les extérieurs pour l'hiver",
+      "description": "🍂 En ce début d'automne, l'atelier Espaces Verts d'Elisa30 prépare déjà les extérieurs pour l'hiver : taille, entretien, plantations de saison...\nUn travail de fond, discret mais essentiel !\n👀 Vous les avez peut-être déjà croisés sur un chantier près de chez vous ?",
+      "hashtags": "",
+      "imageIdee": "Photo de l'équipe en extérieur, outils en main",
+      "datePublication": "2026-10-08",
+      "heure": "17:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Espaces verts",
+      "angle": "Contenu \"métier\" evergreen : entretien des extérieurs à l'approche de l'hiver",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261009",
+      "eventId": "ev-semaine-gout",
+      "titre": "Teaser : la Semaine du Goût arrive",
+      "description": "👀 La semaine prochaine, c'est LA semaine de nos équipes cuisine et salle : la Semaine du Goût (12 → 18 octobre) !\nAu programme chez Elisa30 : des produits de saison mis à l'honneur, les coulisses de notre atelier Cuisine, et peut-être quelques surprises au menu...\nOn vous dit tout dès lundi 👇",
+      "hashtags": "",
+      "imageIdee": "Visuel teaser (produits de saison sur une table, ou visuel officiel Semaine du Goût)",
+      "datePublication": "2026-10-09",
+      "heure": "11:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Cuisine / Service en salle",
+      "angle": "Créer de l'attente avant la semaine phare du mois",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261010",
+      "eventId": "ev-sante-mentale",
+      "titre": "Santé mentale : le travail, une fierté collective",
+      "description": "🧡 10 octobre : Journée mondiale de la santé mentale.\nChez Elisa30, on le vit chaque jour : le travail, quand il a du sens et qu'on s'y sent à sa place, ça change tout.\nUn rythme, une équipe, une fierté au bout de la journée — c'est aussi ça, prendre soin de sa santé mentale.\nMerci à toutes celles et ceux qui, ici, avancent chaque jour à leur façon. 🙏",
+      "hashtags": "",
+      "imageIdee": "Photo d'ambiance collective en atelier ou au restaurant (éviter le gros plan sur une seule personne)",
+      "datePublication": "2026-10-10",
+      "heure": "11:00",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Transversal",
+      "angle": "Message positif centré sur le travail, la fierté, la place de chacun — pas de vocabulaire médical, personne non identifiée individuellement",
+      "vigilance": "SUJET SENSIBLE : à faire valider avant publication. Ne pas mentionner de diagnostic ni cibler une personne précise ; se concentrer sur le travail et la fierté collective",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261012",
+      "eventId": "ev-semaine-gout",
+      "titre": "Lancement de la Semaine du Goût",
+      "description": "🍽️ C'est parti pour la Semaine du Goût (12 → 18 octobre) !\nToute la semaine, on vous emmène derrière les fourneaux de Chez Elisa30 : produits de saison, gestes techniques, portraits de notre équipe cuisine...\nUne belle occasion de (re)découvrir tout le savoir-faire qui se cache derrière chaque assiette 👨‍🍳",
+      "hashtags": "",
+      "imageIdee": "Photo de l'équipe cuisine au complet, ou d'un plat du jour soigné",
+      "datePublication": "2026-10-12",
+      "heure": "11:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Cuisine",
+      "angle": "Lancement de la semaine thématique, annonce du fil rouge de la semaine",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261013",
+      "eventId": "ev-semaine-gout",
+      "titre": "Chez Elisa30, un restaurant outil de formation",
+      "description": "Cette semaine, c'est la Semaine du Goût partout en France (12-18 octobre).\n\nL'occasion de rappeler ce qu'est, au fond, notre restaurant Chez Elisa30 : un véritable outil de formation. En salle comme en cuisine, les travailleurs de l'ESAT Elisa 30 développent des compétences professionnelles reconnues, dans un cadre accompagné et bienveillant.\n\nUn restaurant ouvert à tous, où la qualité de l'accueil et des assiettes va de pair avec une mission d'insertion professionnelle.\n\nVous ne connaissez pas encore Chez Elisa30 ? On vous attend, du lundi au vendredi midi, au 690 rue Maurice Schumann à Nîmes.",
+      "hashtags": "#EconomieSocialeEtSolidaire #ESAT #Restauration #InsertionProfessionnelle",
+      "imageIdee": "Photo de la salle du restaurant ou de l'équipe en plein service",
+      "datePublication": "2026-10-13",
+      "heure": "08:30",
+      "plateformes": [
+        "LinkedIn"
+      ],
+      "atelier": "Cuisine / Service en salle",
+      "angle": "Angle pro : le restaurant comme outil de formation professionnelle, ouvert à tous",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261014",
+      "eventId": "ev-semaine-gout",
+      "titre": "Portrait de la semaine : l'atelier Cuisine",
+      "description": "👩‍🍳 Portrait de la semaine : [Prénom], à l'atelier Cuisine de Chez Elisa30.\n« Ce que je préfère, c'est [citation à recueillir] »\nChaque jour, c'est ce genre d'engagement qui fait la qualité de nos assiettes. Merci [Prénom] ! 🙌",
+      "hashtags": "",
+      "imageIdee": "Portrait de la personne en action, souriant, en cuisine",
+      "datePublication": "2026-10-14",
+      "heure": "12:00",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Cuisine",
+      "angle": "Portrait / coulisses : mettre un visage et une voix sur l'atelier Cuisine",
+      "vigilance": "Modèle à personnaliser : nécessite une vraie citation et l'accord explicite de la personne pour publier prénom/photo",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261016",
+      "eventId": "ev-alimentation",
+      "titre": "Journée mondiale de l'alimentation : saison et anti-gaspillage",
+      "description": "🌍 16 octobre, Journée mondiale de l'alimentation.\nÀ Chez Elisa30, ça se traduit par des produits de saison, des quantités justes, et le moins de gaspillage possible en cuisine.\nBien manger, ça commence aussi par bien choisir ce qu'on cuisine 🥕\nBon appétit à tous ceux qui viendront déjeuner avec nous aujourd'hui !",
+      "hashtags": "",
+      "imageIdee": "Photo de produits de saison (panier, étal, ingrédients du jour)",
+      "datePublication": "2026-10-16",
+      "heure": "11:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Cuisine",
+      "angle": "Produits de saison, juste quantité, anti-gaspillage : valeurs concrètes de l'atelier Cuisine",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261020",
+      "eventId": null,
+      "titre": "Zoom sur l'atelier Industrie",
+      "description": "🏭 Zoom sur l'atelier Industrie d'Elisa30 !\nConditionnement, façonnage, prestations pour des entreprises partenaires... précision et rigueur sont au rendez-vous chaque jour.\nUn savoir-faire trop peu connu, et pourtant essentiel 💪",
+      "hashtags": "",
+      "imageIdee": "Photo de l'atelier en activité (mains, gestes, poste de travail)",
+      "datePublication": "2026-10-20",
+      "heure": "17:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Industrie",
+      "angle": "Faire découvrir un atelier moins visible que le restaurant",
+      "vigilance": "Ne pas nommer les entreprises partenaires tant qu'elles n'ont pas donné leur accord pour apparaître dans une publication (démarche en cours)",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261021",
+      "eventId": null,
+      "titre": "Un ESAT, c'est quoi exactement ?",
+      "description": "On nous pose souvent la question : « Un ESAT, c'est quoi exactement ? »\n\nL'ESAT Elisa 30 (IpSIS) accompagne 96 personnes en situation de handicap dans leur activité professionnelle, à travers plusieurs ateliers : cuisine et service en salle, espaces verts, industrie, nettoyage, logistique.\n\nNotre restaurant Chez Elisa30, ouvert au public, en est la vitrine la plus visible — mais tout le travail réalisé pour nos entreprises partenaires l'est tout autant.\n\nVous êtes une entreprise du bassin nîmois et cherchez un partenaire fiable pour une prestation ponctuelle ou récurrente ? Discutons-en.",
+      "hashtags": "#RSE #ESAT #Handicap #Nîmes",
+      "imageIdee": "Photo institutionnelle de l'ESAT ou de plusieurs ateliers en activité",
+      "datePublication": "2026-10-21",
+      "heure": "09:00",
+      "plateformes": [
+        "LinkedIn"
+      ],
+      "atelier": "Transversal",
+      "angle": "Expliquer ce qu'est un ESAT et ouvrir la porte à de nouveaux partenariats locaux",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261022",
+      "eventId": null,
+      "titre": "Le métier de serveur à Chez Elisa30",
+      "description": "🍷 Dresser une table, accueillir un client, gérer un coup de feu... le métier de serveur, ça s'apprend, et ça se voit dans le sourire de l'équipe de Chez Elisa30 !\nPassez nous voir à midi, on serait ravis de vous accueillir 😊",
+      "hashtags": "",
+      "imageIdee": "Photo de la mise en place de la salle ou d'un moment de service",
+      "datePublication": "2026-10-22",
+      "heure": "11:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Service en salle",
+      "angle": "Valoriser le métier de serveur, inviter à venir déjeuner",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261023",
+      "eventId": null,
+      "titre": "L'atelier Logistique, l'équipe de l'ombre",
+      "description": "🚛 Sans l'atelier Logistique, rien n'arrive à bon port ! Approvisionnements, livraisons, organisation... une équipe de l'ombre indispensable au bon fonctionnement d'Elisa30 🙌",
+      "hashtags": "",
+      "imageIdee": "Photo de l'équipe en action (chargement, préparation de commandes)",
+      "datePublication": "2026-10-23",
+      "heure": "17:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Logistique",
+      "angle": "Valoriser un atelier peu visible mais indispensable au fonctionnement global",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261028",
+      "eventId": "ev-halloween",
+      "titre": "Teaser Halloween chez Elisa30",
+      "description": "🎃 Ça sent l'automne (et un peu la citrouille) du côté d'Elisa30 !\nNos équipes préparent une petite surprise pour Halloween... rendez-vous vendredi pour la découvrir 👻",
+      "hashtags": "",
+      "imageIdee": "Photo d'une décoration en cours de préparation (citrouilles, déco d'atelier)",
+      "datePublication": "2026-10-28",
+      "heure": "17:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Espaces verts / Industrie",
+      "angle": "Teaser léger avant l'animation du vendredi",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261029",
+      "eventId": "ev-duoday",
+      "titre": "DuoDay 2026 : le grand rendez-vous de novembre",
+      "description": "Dans quelques semaines, ce sera le DuoDay 2026 (jeudi 19 novembre), pendant la Semaine européenne pour l'Emploi des Personnes Handicapées.\n\nLe principe : le temps d'une journée, une personne en situation de handicap forme un duo avec un professionnel volontaire, pour découvrir un métier — et pourquoi pas, ouvrir des portes.\n\nL'ESAT Elisa 30 se mobilise autour de cet événement. Vous êtes une entreprise ou une structure et souhaitez accueillir un duo le temps d'une journée ? Les inscriptions sont ouvertes sur duoday.fr.\n\nOn vous en reparle très vite !",
+      "hashtags": "#DuoDay2026 #SEEPH2026 #Handicap #Inclusion",
+      "imageIdee": "Visuel officiel DuoDay si disponible, sinon photo d'équipe",
+      "datePublication": "2026-10-29",
+      "heure": "09:00",
+      "plateformes": [
+        "LinkedIn"
+      ],
+      "atelier": "Transversal",
+      "angle": "Faire le pont vers le grand rendez-vous emploi/handicap de novembre, inscriptions déjà ouvertes",
+      "vigilance": "",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261030",
+      "eventId": "ev-halloween",
+      "titre": "Halloween au restaurant",
+      "description": "🎃 Aujourd'hui, Chez Elisa30 se met aux couleurs d'Halloween !\nAu menu : [plat spécial à compléter]. Une ambiance différente, la même bonne humeur en cuisine et en salle 😄\nOn vous attend à midi !",
+      "hashtags": "",
+      "imageIdee": "Photo de la salle décorée ou du plat du jour \"spécial Halloween\"",
+      "datePublication": "2026-10-30",
+      "heure": "10:30",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Cuisine / Service en salle",
+      "angle": "Activation concrète au restaurant le dernier jour d'ouverture avant le week-end d'Halloween",
+      "vigilance": "À compléter avec le vrai plat du jour prévu",
+      "statut": "idee"
+    },
+    {
+      "id": "po-20261031",
+      "eventId": "ev-halloween",
+      "titre": "Joyeux Halloween !",
+      "description": "👻 Joyeux Halloween à toutes et tous, de la part de toute l'équipe d'Elisa30 !",
+      "hashtags": "",
+      "imageIdee": "Visuel simple (déco du restaurant, ou visuel graphique Halloween)",
+      "datePublication": "2026-10-31",
+      "heure": "10:00",
+      "plateformes": [
+        "Instagram",
+        "Facebook"
+      ],
+      "atelier": "Transversal",
+      "angle": "Post léger de clôture, faible charge de travail",
+      "vigilance": "Facultatif si la charge de la semaine est déjà pleine",
+      "statut": "idee"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "calendy": {
+      "command": "node",
+      "args": ["C:\\Calendy\\calendy-mcp.js"],
+      "env": {
+        "CALENDY_URL": "http://localhost:3000",
+        "CALENDY_TOKEN": "",
+        "CALENDY_EXPORT_DIR": ""
+      }
+    }
+  }
+}

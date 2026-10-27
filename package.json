@@ -1,0 +1,25 @@
+{
+  "name": "calendy",
+  "version": "1.0.0",
+  "description": "Calendrier éditorial des réseaux sociaux de l'ESAT Elisa 30, avec export Excel et pilotage par Claude Desktop (MCP)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test test/api.test.js test/mcp.test.js",
+    "build:mcp": "esbuild mcp.js --bundle --platform=node --format=cjs --target=node20 --outfile=dist/calendy-mcp.js --log-level=warning",
+    "test:bundle": "MCP_ENTRY=dist/calendy-mcp.js node --test test/mcp.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "esbuild": "^0.28.2",
+    "zod": "^4.6.7"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,7 @@
+node_modules
+data
+dist
+test
+.git
+*.md
+claude_desktop_config.example.json
