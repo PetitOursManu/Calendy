@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const ExcelJS = require('exceljs');
-const { semaineLabel, periodeFr } = require('../server.js');
+const { semaineLabel, periodeFr, nettoyerJeton } = require('../server.js');
 
 const TOKEN = 'jeton-de-test-0123456789';
 const PORT = 3900 + Math.floor(Math.random() * 90);
@@ -66,6 +66,52 @@ test('santé et authentification', async () => {
   assert.equal((await api('GET', '/api/state', undefined, { token: '' })).status, 401);
   assert.equal((await api('GET', '/api/state', undefined, { token: 'mauvais' })).status, 401);
   assert.equal((await api('GET', '/api/state')).status, 200);
+});
+
+test('nettoyerJeton retire espaces, retours à la ligne et guillemets d’enveloppe', () => {
+  assert.equal(nettoyerJeton('abc123'), 'abc123');
+  assert.equal(nettoyerJeton('abc123\n'), 'abc123');
+  assert.equal(nettoyerJeton('  abc123 \r\n'), 'abc123');
+  assert.equal(nettoyerJeton('"abc123"'), 'abc123');
+  assert.equal(nettoyerJeton("'abc123'\n"), 'abc123');
+  assert.equal(nettoyerJeton('"abc 123"'), 'abc 123');
+  assert.equal(nettoyerJeton('ab"c1"23'), 'ab"c1"23', 'guillemets au milieu : on ne touche à rien');
+  assert.equal(nettoyerJeton('"abc123'), '"abc123', 'guillemet isolé : on ne touche à rien');
+  assert.equal(nettoyerJeton(undefined), '');
+});
+
+test('un jeton mal formé dans la variable d’environnement reste utilisable', async () => {
+  const cas = [
+    ['retour à la ligne final', 'secret-de-test\n', 'secret-de-test'],
+    ['espaces autour', '  secret-de-test  ', 'secret-de-test'],
+    ['guillemets autour', '"secret-de-test"', 'secret-de-test'],
+    ['guillemets collés avec le jeton', 'secret-de-test', '"secret-de-test"'],
+  ];
+  for (const [nom, valeurEnv, envoye] of cas) {
+    const port = 4100 + Math.floor(Math.random() * 400);
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'calendy-jeton-'));
+    const proc = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
+      env: { ...process.env, PORT: String(port), DATA_DIR: dir, CALENDY_TOKEN: valeurEnv, CALENDY_NO_SEED: '1' },
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        proc.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
+        proc.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
+        setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+      });
+      const url = `http://127.0.0.1:${port}/api/state`;
+      const bon = await fetch(url, { headers: { Authorization: `Bearer ${envoye}` } });
+      assert.equal(bon.status, 200, `jeton accepté : ${nom}`);
+      const faux = await fetch(url, { headers: { Authorization: 'Bearer autre-chose' } });
+      assert.equal(faux.status, 401, `mauvais jeton toujours refusé : ${nom}`);
+      const aucun = await fetch(url);
+      assert.equal(aucun.status, 401, `sans jeton toujours refusé : ${nom}`);
+    } finally {
+      proc.kill();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 });
 
 test('premier démarrage : seed chargé (18 posts, 8 événements)', async () => {

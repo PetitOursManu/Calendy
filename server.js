@@ -25,7 +25,21 @@ const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
-const TOKEN = process.env.CALENDY_TOKEN || '';
+
+/**
+ * Nettoie un jeton : retire les espaces et retours à la ligne aux extrémités, puis une paire de
+ * guillemets qui entourerait toute la valeur. Les hébergeurs (Coolify, fichiers .env…) laissent
+ * parfois traîner ces caractères, invisibles à l'œil, qui rendaient le bon jeton « incorrect ».
+ */
+function nettoyerJeton(valeur) {
+  let t = String(valeur ?? '').trim();
+  const entoure = t.match(/^(["'])([\s\S]*)\1$/);
+  if (entoure) t = entoure[2].trim();
+  return t;
+}
+
+const TOKEN_BRUT = process.env.CALENDY_TOKEN || '';
+const TOKEN = nettoyerJeton(TOKEN_BRUT);
 const INDEX_FILE = path.join(__dirname, 'public', 'index.html');
 
 const STATUTS = ['idee', 'valide', 'refuse', 'publie'];
@@ -533,13 +547,23 @@ route('GET', /^\/api\/export\.xlsx$/, async ({ query }) => {
 /* HTTP                                                               */
 /* ------------------------------------------------------------------ */
 
-function tokenOk(req) {
-  if (!TOKEN) return true;
+function jetonRecu(req) {
   const header = req.headers.authorization || '';
   const given = header.startsWith('Bearer ') ? header.slice(7) : req.headers['x-calendy-token'] || '';
-  const a = crypto.createHash('sha256').update(String(given)).digest();
+  return nettoyerJeton(given);
+}
+
+function tokenOk(req) {
+  if (!TOKEN) return true;
+  const a = crypto.createHash('sha256').update(jetonRecu(req)).digest();
   const b = crypto.createHash('sha256').update(TOKEN).digest();
-  return crypto.timingSafeEqual(a, b);
+  const ok = crypto.timingSafeEqual(a, b);
+  // Aide au diagnostic : on journalise la longueur (jamais la valeur) d'un jeton refusé.
+  if (!ok) {
+    const recu = jetonRecu(req);
+    if (recu) console.warn(`Jeton refusé : ${recu.length} caractères reçus, ${TOKEN.length} attendus.`);
+  }
+  return ok;
 }
 
 function readBody(req) {
@@ -659,11 +683,16 @@ if (require.main === module) {
   loadDb();
   server.listen(PORT, HOST, () => {
     console.log(`Calendy prêt sur http://${HOST}:${PORT}  (données : ${DATA_FILE})`);
-    if (!TOKEN) console.log('Aucun CALENDY_TOKEN défini : l’API est ouverte à quiconque atteint ce port.');
+    if (!TOKEN) {
+      console.log('Aucun CALENDY_TOKEN défini : l’API est ouverte à quiconque atteint ce port.');
+    } else {
+      const retouche = TOKEN !== TOKEN_BRUT ? ' (espaces ou guillemets en trop retirés)' : '';
+      console.log(`Jeton d'accès actif : ${TOKEN.length} caractères${retouche}.`);
+    }
   });
   const stop = () => server.close(() => process.exit(0));
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
 }
 
-module.exports = { semaineLabel, periodeFr };
+module.exports = { semaineLabel, periodeFr, nettoyerJeton };

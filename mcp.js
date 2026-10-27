@@ -22,7 +22,8 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 
 const BASE_URL = (process.env.CALENDY_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
-const TOKEN = process.env.CALENDY_TOKEN || '';
+// Espaces et guillemets en trop retirés, comme côté serveur (un retour à la ligne rendrait l'en-tête invalide).
+const TOKEN = (process.env.CALENDY_TOKEN || '').trim().replace(/^(["'])([\s\S]*)\1$/, '$2').trim();
 
 /* ------------------------------------------------------------------ */
 /* Appels à l'API                                                     */

@@ -85,6 +85,8 @@ Le `Dockerfile` fourni construit une image légère.
 
 Au premier accès, la page demande le jeton et le garde dans le navigateur. Le contrôle de santé est `GET /api/health`.
 
+Au démarrage, les journaux du conteneur indiquent `Jeton d'accès actif : N caractères` (jamais la valeur). Le serveur ignore les espaces, retours à la ligne et guillemets qui entoureraient le jeton. Si la page répond « jeton refusé », compare ce nombre avec la longueur du jeton collé ; un refus écrit aussi `Jeton refusé : X caractères reçus, Y attendus` dans les journaux. Après avoir modifié la variable, il faut **redéployer** l'application. Évite `$` et `#` dans le jeton (certains hébergeurs les interprètent) : `openssl rand -hex 24` ne produit que des chiffres et des lettres.
+
 Sauvegarde : copie simplement `data.json` du volume.
 
 ## Variables d'environnement
@@ -102,7 +104,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 21 tests : API, export Excel, connecteur MCP
+npm test                # 23 tests : API, export Excel, connecteur MCP
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
