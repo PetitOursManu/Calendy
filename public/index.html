@@ -149,6 +149,14 @@ button{cursor:pointer}
 .group-title{font-size:19px;font-weight:700;margin:28px 0 10px}
 .group-title:first-child{margin-top:4px}
 .list{display:grid;gap:12px;max-width:920px}
+.mois{max-width:920px;margin:0 0 18px}
+.mois-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--denim-pale);border:1px solid var(--denim-wash);border-left:5px solid var(--denim);border-radius:8px;padding:9px 14px;font-size:19px;font-weight:700;color:var(--denim-ink)}
+.mois-btn:hover{background:var(--denim-wash)}
+.mois-btn::before{content:"";width:9px;height:9px;border-right:3px solid currentColor;border-bottom:3px solid currentColor;transform:rotate(45deg) translate(-2px,-2px);transition:transform .15s;flex:none}
+.mois-btn[aria-expanded=false]::before{transform:rotate(-45deg)}
+.mois-btn .pill{margin-left:auto;font-size:13px}
+.mois .list{margin-top:12px}
+@media (prefers-reduced-motion:reduce){.mois-btn::before{transition:none}}
 .card{display:grid;grid-template-columns:64px minmax(0,1fr);gap:6px 18px;padding:16px 18px;background:var(--surface);border-radius:12px}
 .card.idea{border:1.5px dashed var(--idee-line)}
 .cdate{text-align:center;line-height:1.15}
@@ -335,7 +343,7 @@ const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Numbe
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* ================= état ================= */
-const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), loaded: false, sig: '' };
+const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), loaded: false, sig: '' };
 const evById = (id) => state.evenements.find((e) => e.id === id);
 const postById = (id) => state.posts.find((p) => p.id === id);
 const parHeure = (a, b) => (a.heure || '').localeCompare(b.heure || '') || a.titre.localeCompare(b.titre);
@@ -676,6 +684,14 @@ function agendaHtml(ym) {
   return `<div class="agenda">${evHtml}${dayHtml}</div>`;
 }
 
+/* ---- section repliable par mois (À valider, Événements) ---- */
+function moisSection(vue, ym, nb, contenu, unite) {
+  const key = `${vue}:${ym}`;
+  const open = !state.collapsed.has(key);
+  return `<section class="mois"><h2 class="group-title" style="margin:0"><button type="button" class="mois-btn" data-action="toggle-mois" data-key="${esc(key)}" aria-expanded="${open}" aria-controls="m-${esc(key.replace(':', '-'))}">${esc(titreMois(ym))}<span class="pill">${nb} ${unite}${nb > 1 ? 's' : ''}</span></button></h2>
+    <div class="list" id="m-${esc(key.replace(':', '-'))}"${open ? '' : ' hidden'}>${contenu}</div></section>`;
+}
+
 /* ---- à valider ---- */
 function validateView() {
   const ideas = state.posts.filter((p) => p.statut === 'idee').sort((a, b) => a.datePublication.localeCompare(b.datePublication) || parHeure(a, b));
@@ -683,14 +699,16 @@ function validateView() {
     return `<div class="empty"><strong>Tout est décidé.</strong><p>Aucun post n’attend de validation pour le moment.</p><button class="btn primary" data-action="new-post">${icon('i-plus')}Nouveau post</button></div>`;
   }
   const today = todayIso();
-  let html = '<div class="list">';
-  let current = '';
+  const parMois = new Map();
   for (const p of ideas) {
     const ym = p.datePublication.slice(0, 7);
-    if (ym !== current) { current = ym; html += `</div><h2 class="group-title">${esc(titreMois(ym))}</h2><div class="list">`; }
+    if (!parMois.has(ym)) parMois.set(ym, []);
+    parMois.get(ym).push(p);
+  }
+  const carte = (p) => {
     const ev = p.eventId ? evById(p.eventId) : null;
     const past = p.datePublication < today;
-    html += `<article class="card idea${past ? ' past' : ''}" aria-labelledby="t-${esc(p.id)}">
+    return `<article class="card idea${past ? ' past' : ''}" aria-labelledby="t-${esc(p.id)}">
       <div class="cdate"><small>${JOURS_COURTS[weekday(p.datePublication)]}</small><span class="n">${dayNum(p.datePublication)}</span><small>${MOIS_COURTS[monthIdx(p.datePublication)]}</small></div>
       <div>
         <h3 id="t-${esc(p.id)}">${esc(p.titre)}${past ? '<span class="tag-past">Date passée</span>' : ''}</h3>
@@ -710,8 +728,8 @@ function validateView() {
         <button class="btn no" data-action="set-statut" data-id="${esc(p.id)}" data-statut="refuse">${icon('i-x')}Refuser</button>
         <button class="btn" data-action="edit-post" data-id="${esc(p.id)}">Modifier</button>
       </div></article>`;
-  }
-  return `${html}</div>`;
+  };
+  return [...parMois].map(([ym, ps]) => moisSection('valider', ym, ps.length, ps.map(carte).join(''), 'idée')).join('');
 }
 
 /* ---- événements ---- */
@@ -737,11 +755,14 @@ function eventsView() {
         </div>
       </div></article>`;
   };
-  const avenir = evs.filter((e) => e.dateFin >= today);
-  const passes = evs.filter((e) => e.dateFin < today).reverse();
+  const parMois = new Map();
+  for (const e of [...evs].sort((a, b) => a.dateDebut.localeCompare(b.dateDebut) || a.nom.localeCompare(b.nom))) {
+    const ym = e.dateDebut.slice(0, 7);
+    if (!parMois.has(ym)) parMois.set(ym, []);
+    parMois.get(ym).push(e);
+  }
   return `<div class="cal-bar"><h2 style="font-size:27px">Événements</h2><div class="top-actions"><button class="btn" data-action="new-event">${icon('i-plus')}Nouvel événement</button></div></div>
-    ${avenir.length ? `<h2 class="group-title">À venir</h2><div class="list">${avenir.map(card).join('')}</div>` : ''}
-    ${passes.length ? `<h2 class="group-title">Passés</h2><div class="list">${passes.map(card).join('')}</div>` : ''}`;
+    ${[...parMois].map(([ym, es]) => moisSection('evenements', ym, es.length, es.map(card).join(''), 'événement')).join('')}`;
 }
 
 /* ================= tiroir : post ================= */
@@ -1006,6 +1027,7 @@ document.addEventListener('click', (e) => {
     case 'nav-prev': state.month = shiftMonth(state.month, -1); render(); break;
     case 'nav-next': state.month = shiftMonth(state.month, 1); render(); break;
     case 'nav-today': state.month = todayIso().slice(0, 7); render(); break;
+    case 'toggle-mois': state.collapsed.has(d.key) ? state.collapsed.delete(d.key) : state.collapsed.add(d.key); render(); break;
     case 'toggle-statut': state.hidden.has(d.statut) ? state.hidden.delete(d.statut) : state.hidden.add(d.statut); render(); break;
     case 'new-post': {
       const dlg = $('#drawer');
