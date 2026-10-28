@@ -112,6 +112,7 @@ button{cursor:pointer}
 /* ---------- grille du mois ---------- */
 .grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:var(--line-strong);border:1px solid var(--line-strong);border-radius:12px;overflow:clip}
 .dow{background:var(--soft);padding:8px 10px;font-weight:700;font-size:13.5px;color:var(--mute)}
+.grid.compact .day{min-height:92px}
 .day{background:var(--surface);min-height:132px;display:flex;flex-direction:column;position:relative}
 .day.weekend{background:#FAFBFA}
 .day.out{background:var(--soft)}
@@ -366,7 +367,7 @@ const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Numbe
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* ================= état ================= */
-const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', loaded: false, sig: '' };
+const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', evVue: 'liste', evMois: todayIso().slice(0, 7), loaded: false, sig: '' };
 const evById = (id) => state.evenements.find((e) => e.id === id);
 const postById = (id) => state.posts.find((p) => p.id === id);
 const parHeure = (a, b) => (a.heure || '').localeCompare(b.heure || '') || a.titre.localeCompare(b.titre);
@@ -667,7 +668,7 @@ function gridCells(ym, garde, ajout) {
     const label = dayNum(iso) === 1 ? `1 ${MOIS_COURTS[monthIdx(iso)]}` : dayNum(iso);
     cells += `<div class="day${iso.startsWith(ym) ? '' : ' out'}${col >= 5 ? ' weekend' : ''}${iso === today ? ' today' : ''}">
       <div class="day-head"><span class="dn" ${iso === today ? 'aria-label="Aujourd’hui"' : ''}>${label}</span>
-        ${ajout ? `<button type="button" class="add" data-action="new-post" data-date="${iso}" aria-label="Ajouter un post le ${esc(dateLongue(iso))}">${icon('i-plus')}</button>` : ''}</div>
+        ${ajout ? `<button type="button" class="add" data-action="${ajout === 'evenement' ? 'new-event' : 'new-post'}" data-date="${iso}" aria-label="Ajouter ${ajout === 'evenement' ? 'un événement' : 'un post'} le ${esc(dateLongue(iso))}">${icon('i-plus')}</button>` : ''}</div>
       <div class="lanes">${laneHtml(iso, col, addDays(iso, 6 - col), ctx)}</div>
       <div class="day-posts">${posts.map(chip).join('')}</div></div>`;
   }
@@ -714,6 +715,11 @@ function agendaHtml(ym, garde = (p) => !state.hidden.has(p.statut)) {
   const dayHtml = days.map((iso) => `<section class="ag-day"><div class="cdate"><span class="n">${dayNum(iso)}</span><small>${JOURS_COURTS[weekday(iso)]}</small></div>
     <div class="ag-posts">${state.posts.filter((p) => p.datePublication === iso && garde(p)).sort(parHeure).map(chip).join('')}</div></section>`).join('');
   return `<div class="agenda">${evHtml}${dayHtml}</div>`;
+}
+
+/* ---- bascule Liste / Calendrier (cible : 'val' = À valider, 'ev' = Événements) ---- */
+function vueToggle(cible, courant) {
+  return `<div class="vue-toggle" role="group" aria-label="Mode d’affichage">${[['liste', 'Liste'], ['calendrier', 'Calendrier']].map(([v, l]) => `<button type="button" data-action="choisir-vue" data-cible="${cible}" data-vue="${v}" aria-pressed="${courant === v}">${icon(v === 'liste' ? 'i-list' : 'i-cal')}${l}</button>`).join('')}</div>`;
 }
 
 /* ---- section repliable par mois (À valider, Événements) ---- */
@@ -768,7 +774,7 @@ function validateView() {
     state.valMois = mois.find((ym) => ym >= today.slice(0, 7)) || mois[mois.length - 1];
   }
   const chip = (ym, label, nb) => `<button type="button" class="mois-chip" data-action="choisir-mois" data-mois="${esc(ym)}" aria-pressed="${state.valMois === ym}">${esc(label)}<span class="n">${nb}</span></button>`;
-  const vues = `<div class="vue-toggle" role="group" aria-label="Mode d’affichage">${[['liste', 'Liste'], ['calendrier', 'Calendrier']].map(([v, l]) => `<button type="button" data-action="choisir-vue" data-vue="${v}" aria-pressed="${state.valVue === v}">${icon(v === 'liste' ? 'i-list' : 'i-cal')}${l}</button>`).join('')}</div>`;
+  const vues = vueToggle('val', state.valVue);
   const filtre = `<div class="val-bar"><nav class="mois-filtre" aria-label="Choisir le mois des propositions">${mois.map((ym) => chip(ym, titreMois(ym), parMois.get(ym).length)).join('')}${mois.length > 1 && !cal ? chip('all', 'Tous les mois', ideas.length) : ''}</nav>${vues}</div>`;
   if (cal) {
     const garde = (p) => p.statut === 'idee';
@@ -804,13 +810,26 @@ function eventsView() {
         </div>
       </div></article>`;
   };
+  if (state.evVue === 'calendrier') {
+    const ym = state.evMois;
+    const nb = evs.filter((e) => e.dateFin >= `${ym}-01` && e.dateDebut <= `${ym}-31`).length;
+    return `<div class="cal-bar"><h2 style="font-size:27px">Événements</h2><div class="top-actions">${vueToggle('ev', 'calendrier')}<button class="btn" data-action="new-event">${icon('i-plus')}Nouvel événement</button></div></div>
+      <div class="cal-bar"><div class="cal-nav">
+        <button class="icon-btn" data-action="ev-prev" aria-label="Mois précédent">${icon('i-left')}</button>
+        <h2 aria-live="polite">${esc(titreMois(ym))}</h2>
+        <button class="icon-btn" data-action="ev-next" aria-label="Mois suivant">${icon('i-right')}</button>
+        <button class="btn" data-action="ev-today">Aujourd’hui</button>
+      </div><span class="pill">${nb} événement${nb > 1 ? 's' : ''} ce mois-ci</span></div>
+      <div class="grid compact" role="presentation">${gridCells(ym, () => false, 'evenement')}</div>
+      ${agendaHtml(ym, () => false)}`;
+  }
   const parMois = new Map();
   for (const e of [...evs].sort((a, b) => a.dateDebut.localeCompare(b.dateDebut) || a.nom.localeCompare(b.nom))) {
     const ym = e.dateDebut.slice(0, 7);
     if (!parMois.has(ym)) parMois.set(ym, []);
     parMois.get(ym).push(e);
   }
-  return `<div class="cal-bar"><h2 style="font-size:27px">Événements</h2><div class="top-actions"><button class="btn" data-action="new-event">${icon('i-plus')}Nouvel événement</button></div></div>
+  return `<div class="cal-bar"><h2 style="font-size:27px">Événements</h2><div class="top-actions">${vueToggle('ev', 'liste')}<button class="btn" data-action="new-event">${icon('i-plus')}Nouvel événement</button></div></div>
     ${[...parMois].map(([ym, es]) => moisSection('evenements', ym, es.length, es.map(card).join(''), 'événement')).join('')}`;
 }
 
@@ -1076,7 +1095,10 @@ document.addEventListener('click', (e) => {
     case 'nav-prev': state.month = shiftMonth(state.month, -1); render(); break;
     case 'nav-next': state.month = shiftMonth(state.month, 1); render(); break;
     case 'nav-today': state.month = todayIso().slice(0, 7); render(); break;
-    case 'choisir-vue': state.valVue = d.vue; render(); break;
+    case 'choisir-vue': if (d.cible === 'ev') state.evVue = d.vue; else state.valVue = d.vue; render(); break;
+    case 'ev-prev': state.evMois = shiftMonth(state.evMois, -1); render(); break;
+    case 'ev-next': state.evMois = shiftMonth(state.evMois, 1); render(); break;
+    case 'ev-today': state.evMois = todayIso().slice(0, 7); render(); break;
     case 'choisir-mois': state.valMois = d.mois; render(); window.scrollTo(0, 0); break;
     case 'toggle-mois': state.collapsed.has(d.key) ? state.collapsed.delete(d.key) : state.collapsed.add(d.key); render(); break;
     case 'toggle-statut': state.hidden.has(d.statut) ? state.hidden.delete(d.statut) : state.hidden.add(d.statut); render(); break;
@@ -1092,7 +1114,7 @@ document.addEventListener('click', (e) => {
       openPost(d.id);
       break;
     }
-    case 'new-event': openEvent(null); break;
+    case 'new-event': openEvent(null, { date: d.date }); break;
     case 'edit-event': {
       const dlg = $('#drawer');
       if (dlg.open) { dlg._dirty = false; dlg.close(); }
