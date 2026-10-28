@@ -155,6 +155,13 @@ button{cursor:pointer}
 .mois-chip:hover{background:var(--soft)}
 .mois-chip[aria-pressed=true]{background:var(--denim);border-color:var(--denim);color:#fff}
 .mois-chip .n{display:inline-block;min-width:22px;text-align:center;padding:0 7px;border-radius:12px;font-size:13px;background:var(--idee-bg);color:var(--idee);border:1px solid var(--idee-line)}
+.val-bar{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 20px;margin:0 0 18px}
+.val-bar .mois-filtre{margin:0;flex:1 1 360px}
+.vue-toggle{display:inline-flex;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;background:var(--surface)}
+.vue-toggle button{display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:7px 14px;font-weight:700;color:var(--mute)}
+.vue-toggle button+button{border-left:1px solid var(--line-strong)}
+.vue-toggle button:hover{background:var(--soft);color:var(--ink)}
+.vue-toggle button[aria-pressed=true]{background:var(--denim);color:#fff}
 .mois-chip[aria-pressed=true] .n{background:#fff;color:var(--denim-ink);border-color:#fff}
 .mois-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--denim-pale);border:1px solid var(--denim-wash);border-left:5px solid var(--denim);border-radius:8px;padding:9px 14px;font-size:19px;font-weight:700;color:var(--denim-ink)}
 .mois-btn:hover{background:var(--denim-wash)}
@@ -274,6 +281,8 @@ fieldset{border:0;display:grid;gap:8px}
   <symbol id="i-sent" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol>
   <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17v.4"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+  <symbol id="i-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
   <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
   <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="1.6"/><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4"/></symbol>
@@ -349,7 +358,7 @@ const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Numbe
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* ================= état ================= */
-const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, loaded: false, sig: '' };
+const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', loaded: false, sig: '' };
 const evById = (id) => state.evenements.find((e) => e.id === id);
 const postById = (id) => state.posts.find((p) => p.id === id);
 const parHeure = (a, b) => (a.heure || '').localeCompare(b.heure || '') || a.titre.localeCompare(b.titre);
@@ -629,8 +638,8 @@ function laneHtml(iso, col, rowEnd, ctx) {
   return out;
 }
 
-function calendarView() {
-  const ym = state.month;
+/* grille d’un mois : `garde` choisit les posts affichés, `ajout` montre le bouton + de chaque jour */
+function gridCells(ym, garde, ajout) {
   const [y, m] = ym.split('-').map(Number);
   const first = `${ym}-01`;
   const offset = weekday(first);
@@ -639,6 +648,23 @@ function calendarView() {
   const gridEnd = addDays(gridStart, weeks * 7 - 1);
   const ctx = assignLanes(state.evenements, gridStart, gridEnd);
   const today = todayIso();
+  let cells = JOURS.map((j) => `<div class="dow">${j}</div>`).join('');
+  for (let i = 0; i < weeks * 7; i++) {
+    const iso = addDays(gridStart, i);
+    const col = i % 7;
+    const posts = state.posts.filter((p) => p.datePublication === iso && garde(p)).sort(parHeure);
+    const label = dayNum(iso) === 1 ? `1 ${MOIS_COURTS[monthIdx(iso)]}` : dayNum(iso);
+    cells += `<div class="day${iso.startsWith(ym) ? '' : ' out'}${col >= 5 ? ' weekend' : ''}${iso === today ? ' today' : ''}">
+      <div class="day-head"><span class="dn" ${iso === today ? 'aria-label="Aujourd’hui"' : ''}>${label}</span>
+        ${ajout ? `<button type="button" class="add" data-action="new-post" data-date="${iso}" aria-label="Ajouter un post le ${esc(dateLongue(iso))}">${icon('i-plus')}</button>` : ''}</div>
+      <div class="lanes">${laneHtml(iso, col, addDays(iso, 6 - col), ctx)}</div>
+      <div class="day-posts">${posts.map(chip).join('')}</div></div>`;
+  }
+  return cells;
+}
+
+function calendarView() {
+  const ym = state.month;
   const monthPosts = state.posts.filter((p) => p.datePublication.startsWith(ym));
 
   const filters = ORDRE.map((s) => {
@@ -646,18 +672,7 @@ function calendarView() {
     return `<button type="button" class="filter s-${s}" data-action="toggle-statut" data-statut="${s}" aria-pressed="${!state.hidden.has(s)}">${icon(ICONES[s])}${STATUTS[s]} <span class="n">${n}</span></button>`;
   }).join('');
 
-  let cells = JOURS.map((j) => `<div class="dow">${j}</div>`).join('');
-  for (let i = 0; i < weeks * 7; i++) {
-    const iso = addDays(gridStart, i);
-    const col = i % 7;
-    const posts = state.posts.filter((p) => p.datePublication === iso && !state.hidden.has(p.statut)).sort(parHeure);
-    const label = dayNum(iso) === 1 ? `1 ${MOIS_COURTS[monthIdx(iso)]}` : dayNum(iso);
-    cells += `<div class="day${iso.startsWith(ym) ? '' : ' out'}${col >= 5 ? ' weekend' : ''}${iso === today ? ' today' : ''}">
-      <div class="day-head"><span class="dn" ${iso === today ? 'aria-label="Aujourd’hui"' : ''}>${label}</span>
-        <button type="button" class="add" data-action="new-post" data-date="${iso}" aria-label="Ajouter un post le ${esc(dateLongue(iso))}">${icon('i-plus')}</button></div>
-      <div class="lanes">${laneHtml(iso, col, addDays(iso, 6 - col), ctx)}</div>
-      <div class="day-posts">${posts.map(chip).join('')}</div></div>`;
-  }
+  const cells = gridCells(ym, (p) => !state.hidden.has(p.statut), true);
 
   const empty = monthPosts.length === 0
     ? `<div class="empty"><strong>Aucun post en ${esc(titreMois(ym).toLowerCase())}.</strong><p>Ajoute un post sur un jour du calendrier, ou propose des idées depuis Claude Desktop.</p><button class="btn primary" data-action="new-post">${icon('i-plus')}Nouveau post</button></div>`
@@ -677,8 +692,8 @@ function calendarView() {
     ${empty}`;
 }
 
-function agendaHtml(ym) {
-  const days = [...new Set(state.posts.filter((p) => p.datePublication.startsWith(ym) && !state.hidden.has(p.statut)).map((p) => p.datePublication))].sort();
+function agendaHtml(ym, garde = (p) => !state.hidden.has(p.statut)) {
+  const days = [...new Set(state.posts.filter((p) => p.datePublication.startsWith(ym) && garde(p)).map((p) => p.datePublication))].sort();
   const first = `${ym}-01`;
   const last = `${ym}-${pad(new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate())}`;
   const evs = state.evenements.filter((e) => e.dateFin >= first && e.dateDebut <= last);
@@ -686,7 +701,7 @@ function agendaHtml(ym) {
     ? `<div class="ag-events">${evs.map((e) => `<button type="button" class="ag-ev" data-action="edit-event" data-id="${esc(e.id)}"><strong>${esc(e.nom)}</strong><small>${esc(periode(e.dateDebut, e.dateFin))}</small></button>`).join('')}</div>`
     : '';
   const dayHtml = days.map((iso) => `<section class="ag-day"><div class="cdate"><span class="n">${dayNum(iso)}</span><small>${JOURS_COURTS[weekday(iso)]}</small></div>
-    <div class="ag-posts">${state.posts.filter((p) => p.datePublication === iso && !state.hidden.has(p.statut)).sort(parHeure).map(chip).join('')}</div></section>`).join('');
+    <div class="ag-posts">${state.posts.filter((p) => p.datePublication === iso && garde(p)).sort(parHeure).map(chip).join('')}</div></section>`).join('');
   return `<div class="agenda">${evHtml}${dayHtml}</div>`;
 }
 
@@ -737,11 +752,17 @@ function validateView() {
   };
   // Un seul mois affiché à la fois ; « Tous » pour tout voir. Par défaut : le mois en cours ou le prochain mois qui a des idées.
   const mois = [...parMois.keys()];
-  if (state.valMois !== 'all' && !parMois.has(state.valMois)) {
+  const cal = state.valVue === 'calendrier';
+  if ((state.valMois !== 'all' || cal) && !parMois.has(state.valMois)) {
     state.valMois = mois.find((ym) => ym >= today.slice(0, 7)) || mois[mois.length - 1];
   }
   const chip = (ym, label, nb) => `<button type="button" class="mois-chip" data-action="choisir-mois" data-mois="${esc(ym)}" aria-pressed="${state.valMois === ym}">${esc(label)}<span class="n">${nb}</span></button>`;
-  const filtre = `<nav class="mois-filtre" aria-label="Choisir le mois des propositions">${mois.map((ym) => chip(ym, titreMois(ym), parMois.get(ym).length)).join('')}${mois.length > 1 ? chip('all', 'Tous les mois', ideas.length) : ''}</nav>`;
+  const vues = `<div class="vue-toggle" role="group" aria-label="Mode d’affichage">${[['liste', 'Liste'], ['calendrier', 'Calendrier']].map(([v, l]) => `<button type="button" data-action="choisir-vue" data-vue="${v}" aria-pressed="${state.valVue === v}">${icon(v === 'liste' ? 'i-list' : 'i-cal')}${l}</button>`).join('')}</div>`;
+  const filtre = `<div class="val-bar"><nav class="mois-filtre" aria-label="Choisir le mois des propositions">${mois.map((ym) => chip(ym, titreMois(ym), parMois.get(ym).length)).join('')}${mois.length > 1 && !cal ? chip('all', 'Tous les mois', ideas.length) : ''}</nav>${vues}</div>`;
+  if (cal) {
+    const garde = (p) => p.statut === 'idee';
+    return `${filtre}<div class="grid" role="presentation">${gridCells(state.valMois, garde, false)}</div>${agendaHtml(state.valMois, garde)}`;
+  }
   const affiches = state.valMois === 'all' ? [...parMois] : [[state.valMois, parMois.get(state.valMois)]];
   const corps = state.valMois === 'all'
     ? affiches.map(([ym, ps]) => moisSection('valider', ym, ps.length, ps.map(carte).join(''), 'idée')).join('')
@@ -1044,6 +1065,7 @@ document.addEventListener('click', (e) => {
     case 'nav-prev': state.month = shiftMonth(state.month, -1); render(); break;
     case 'nav-next': state.month = shiftMonth(state.month, 1); render(); break;
     case 'nav-today': state.month = todayIso().slice(0, 7); render(); break;
+    case 'choisir-vue': state.valVue = d.vue; render(); break;
     case 'choisir-mois': state.valMois = d.mois; render(); window.scrollTo(0, 0); break;
     case 'toggle-mois': state.collapsed.has(d.key) ? state.collapsed.delete(d.key) : state.collapsed.add(d.key); render(); break;
     case 'toggle-statut': state.hidden.has(d.statut) ? state.hidden.delete(d.statut) : state.hidden.add(d.statut); render(); break;
