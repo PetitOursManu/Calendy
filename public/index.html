@@ -653,13 +653,16 @@ function gridCells(ym, garde, ajout) {
   const offset = weekday(first);
   const weeks = Math.ceil((offset + new Date(y, m, 0).getDate()) / 7);
   const gridStart = addDays(first, -offset);
-  const gridEnd = addDays(gridStart, weeks * 7 - 1);
-  const ctx = assignLanes(state.evenements, gridStart, gridEnd);
+  const last = `${ym}-${pad(new Date(y, m, 0).getDate())}`;
+  // Seuls les événements qui touchent le mois sont dessinés, et chaque semaine ne réserve que les lignes dont elle a besoin.
+  const evs = state.evenements.filter((e) => e.dateFin >= first && e.dateDebut <= last);
   const today = todayIso();
   let cells = JOURS.map((j) => `<div class="dow">${j}</div>`).join('');
+  let ctx = null;
   for (let i = 0; i < weeks * 7; i++) {
     const iso = addDays(gridStart, i);
     const col = i % 7;
+    if (col === 0) ctx = assignLanes(evs, iso, addDays(iso, 6));
     const posts = state.posts.filter((p) => p.datePublication === iso && garde(p)).sort(parHeure);
     const label = dayNum(iso) === 1 ? `1 ${MOIS_COURTS[monthIdx(iso)]}` : dayNum(iso);
     cells += `<div class="day${iso.startsWith(ym) ? '' : ' out'}${col >= 5 ? ' weekend' : ''}${iso === today ? ' today' : ''}">
