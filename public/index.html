@@ -150,6 +150,12 @@ button{cursor:pointer}
 .group-title:first-child{margin-top:4px}
 .list{display:grid;gap:12px;max-width:920px}
 .mois{max-width:920px;margin:0 0 18px}
+.mois-filtre{display:flex;flex-wrap:wrap;gap:8px;max-width:920px;margin:0 0 18px}
+.mois-chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line-strong);background:var(--surface);border-radius:20px;padding:6px 14px;font-weight:700;color:var(--ink)}
+.mois-chip:hover{background:var(--soft)}
+.mois-chip[aria-pressed=true]{background:var(--denim);border-color:var(--denim);color:#fff}
+.mois-chip .n{display:inline-block;min-width:22px;text-align:center;padding:0 7px;border-radius:12px;font-size:13px;background:var(--idee-bg);color:var(--idee);border:1px solid var(--idee-line)}
+.mois-chip[aria-pressed=true] .n{background:#fff;color:var(--denim-ink);border-color:#fff}
 .mois-btn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:var(--denim-pale);border:1px solid var(--denim-wash);border-left:5px solid var(--denim);border-radius:8px;padding:9px 14px;font-size:19px;font-weight:700;color:var(--denim-ink)}
 .mois-btn:hover{background:var(--denim-wash)}
 .mois-btn::before{content:"";width:9px;height:9px;border-right:3px solid currentColor;border-bottom:3px solid currentColor;transform:rotate(45deg) translate(-2px,-2px);transition:transform .15s;flex:none}
@@ -343,7 +349,7 @@ const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Numbe
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* ================= état ================= */
-const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), loaded: false, sig: '' };
+const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, loaded: false, sig: '' };
 const evById = (id) => state.evenements.find((e) => e.id === id);
 const postById = (id) => state.posts.find((p) => p.id === id);
 const parHeure = (a, b) => (a.heure || '').localeCompare(b.heure || '') || a.titre.localeCompare(b.titre);
@@ -729,7 +735,18 @@ function validateView() {
         <button class="btn" data-action="edit-post" data-id="${esc(p.id)}">Modifier</button>
       </div></article>`;
   };
-  return [...parMois].map(([ym, ps]) => moisSection('valider', ym, ps.length, ps.map(carte).join(''), 'idée')).join('');
+  // Un seul mois affiché à la fois ; « Tous » pour tout voir. Par défaut : le mois en cours ou le prochain mois qui a des idées.
+  const mois = [...parMois.keys()];
+  if (state.valMois !== 'all' && !parMois.has(state.valMois)) {
+    state.valMois = mois.find((ym) => ym >= today.slice(0, 7)) || mois[mois.length - 1];
+  }
+  const chip = (ym, label, nb) => `<button type="button" class="mois-chip" data-action="choisir-mois" data-mois="${esc(ym)}" aria-pressed="${state.valMois === ym}">${esc(label)}<span class="n">${nb}</span></button>`;
+  const filtre = `<nav class="mois-filtre" aria-label="Choisir le mois des propositions">${mois.map((ym) => chip(ym, titreMois(ym), parMois.get(ym).length)).join('')}${mois.length > 1 ? chip('all', 'Tous les mois', ideas.length) : ''}</nav>`;
+  const affiches = state.valMois === 'all' ? [...parMois] : [[state.valMois, parMois.get(state.valMois)]];
+  const corps = state.valMois === 'all'
+    ? affiches.map(([ym, ps]) => moisSection('valider', ym, ps.length, ps.map(carte).join(''), 'idée')).join('')
+    : `<div class="list">${affiches[0][1].map(carte).join('')}</div>`;
+  return filtre + corps;
 }
 
 /* ---- événements ---- */
@@ -1027,6 +1044,7 @@ document.addEventListener('click', (e) => {
     case 'nav-prev': state.month = shiftMonth(state.month, -1); render(); break;
     case 'nav-next': state.month = shiftMonth(state.month, 1); render(); break;
     case 'nav-today': state.month = todayIso().slice(0, 7); render(); break;
+    case 'choisir-mois': state.valMois = d.mois; render(); window.scrollTo(0, 0); break;
     case 'toggle-mois': state.collapsed.has(d.key) ? state.collapsed.delete(d.key) : state.collapsed.add(d.key); render(); break;
     case 'toggle-statut': state.hidden.has(d.statut) ? state.hidden.delete(d.statut) : state.hidden.add(d.statut); render(); break;
     case 'new-post': {
