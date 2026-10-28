@@ -84,7 +84,14 @@ button{cursor:pointer}
 .chip{display:grid;grid-template-columns:auto 1fr;gap:1px 6px;width:100%;text-align:left;padding:4px 7px;border-radius:6px;border:1.5px solid var(--line);background:var(--surface);font-size:12.5px;line-height:1.3}
 .chip .ic{margin-top:2px;font-size:13px}
 .chip .ttl{font-weight:700;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
-.chip .sub{grid-column:2;display:flex;flex-wrap:wrap;gap:0 7px;color:var(--mute);font-size:11.5px}
+.net{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:17px;padding:0 4px;border-radius:5px;font-size:10.5px;font-weight:800;letter-spacing:.02em;color:#fff;line-height:1}
+.net-ig{background:#A3205F}
+.net-fb{background:#1F58B5}
+.net-li{background:#0B6470}
+.nets{display:inline-flex;gap:4px;margin-right:8px;vertical-align:middle}
+.opt .net{margin-right:7px}
+.chip .sub .net{margin-top:2px}
+.chip .sub{align-items:center;grid-column:2;display:flex;flex-wrap:wrap;gap:0 7px;color:var(--mute);font-size:11.5px}
 .s-idee{border:1.5px dashed var(--idee-line)}
 .s-idee .ic{color:var(--idee)}
 .s-valide{background:var(--valide-bg);border-color:var(--valide-line)}
@@ -330,6 +337,7 @@ const ORDRE = ['idee', 'valide', 'refuse', 'publie'];
 const ICONES = { idee: 'i-idea', valide: 'i-check', refuse: 'i-x', publie: 'i-sent' };
 const RESEAUX = ['Instagram', 'Facebook', 'LinkedIn'];
 const ABREV = { Instagram: 'IG', Facebook: 'FB', LinkedIn: 'LI' };
+const badgeReseau = (n) => `<span class="net net-${ABREV[n].toLowerCase()}" aria-hidden="true">${ABREV[n]}</span>`;
 const LIMITES = { Instagram: 2200, LinkedIn: 3000 };
 
 const toIso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -596,7 +604,7 @@ function render() {
 
 /* ---- pastille d’un post ---- */
 function chip(p) {
-  const nets = p.plateformes.map((n) => `<span>${ABREV[n]}</span>`).join('');
+  const nets = p.plateformes.map(badgeReseau).join('');
   const label = `${p.titre}, ${listeFr(p.plateformes)}, ${STATUTS[p.statut]}${hasPhoto(p) ? ', avec photo' : ''}`;
   return `<button type="button" class="chip s-${p.statut}" data-action="edit-post" data-id="${esc(p.id)}" title="${esc(p.titre)}" aria-label="${esc(label)}">
     ${icon(ICONES[p.statut])}<span class="ttl">${esc(p.titre)}</span>
@@ -733,7 +741,7 @@ function validateView() {
       <div class="cdate"><small>${JOURS_COURTS[weekday(p.datePublication)]}</small><span class="n">${dayNum(p.datePublication)}</span><small>${MOIS_COURTS[monthIdx(p.datePublication)]}</small></div>
       <div>
         <h3 id="t-${esc(p.id)}">${esc(p.titre)}${past ? '<span class="tag-past">Date passée</span>' : ''}</h3>
-        <p class="meta">${p.heure ? `${heureFr(p.heure)} sur ` : 'Sur '}${esc(listeFr(p.plateformes))}${p.atelier ? `. Atelier : ${esc(p.atelier)}` : ''}</p>
+        <p class="meta"><span class="nets">${p.plateformes.map(badgeReseau).join('')}</span>${p.heure ? `${heureFr(p.heure)} sur ` : 'Sur '}${esc(listeFr(p.plateformes))}${p.atelier ? `. Atelier : ${esc(p.atelier)}` : ''}</p>
         ${p.description ? `<p class="legende">${esc(p.description)}</p>` : ''}
         ${p.hashtags ? `<p class="tags">${esc(p.hashtags)}</p>` : ''}
         ${photosHtml(p)}
@@ -823,7 +831,7 @@ function evInfoHtml(id) {
 function postForm(p, isNew) {
   const evOptions = ['<option value="">Aucun événement</option>']
     .concat(state.evenements.map((e) => `<option value="${esc(e.id)}"${p.eventId === e.id ? ' selected' : ''}>${esc(e.nom)}, ${esc(periode(e.dateDebut, e.dateFin))}</option>`)).join('');
-  const nets = RESEAUX.map((n) => `<label class="opt"><input type="checkbox" name="plateformes" value="${n}"${p.plateformes.includes(n) ? ' checked' : ''}><span>${n}</span></label>`).join('');
+  const nets = RESEAUX.map((n) => `<label class="opt"><input type="checkbox" name="plateformes" value="${n}"${p.plateformes.includes(n) ? ' checked' : ''}><span>${badgeReseau(n)}${n}</span></label>`).join('');
   const sts = ORDRE.map((s) => `<label class="opt st-${s}"><input type="radio" name="statut" value="${s}"${p.statut === s ? ' checked' : ''}><span>${icon(ICONES[s])}${STATUTS[s]}</span></label>`).join('');
   return `<header class="dr-head"><h2 id="dlgTitle">${isNew ? 'Nouveau post' : 'Modifier le post'}</h2>
       <button type="button" class="icon-btn" data-action="close-dialog" aria-label="Fermer">${icon('i-x')}</button></header>
