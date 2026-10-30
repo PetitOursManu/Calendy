@@ -56,8 +56,9 @@ test('le connecteur annonce ses outils et ses consignes', async () => {
   const { tools } = await client.listTools();
   const noms = tools.map((t) => t.name).sort();
   assert.deepEqual(noms, [
-    'ajouter_photo', 'apercu', 'changer_statut', 'creer_evenement', 'creer_post', 'exporter_excel', 'lire_post',
-    'lister_evenements', 'lister_posts', 'modifier_evenement', 'modifier_post', 'retirer_photo', 'supprimer_evenement', 'supprimer_post',
+    'ajouter_photo', 'apercu', 'changer_statut', 'cloner_post', 'creer_evenement', 'creer_post', 'deplacer_post', 'exporter_excel',
+    'fusionner_posts', 'lire_post', 'lister_evenements', 'lister_posts', 'modifier_evenement', 'modifier_post', 'retirer_photo',
+    'supprimer_evenement', 'supprimer_post',
   ]);
   assert.ok(tools.every((t) => t.description && t.description.length > 30), 'chaque outil est décrit');
   assert.equal(tools.find((t) => t.name === 'supprimer_post').annotations.destructiveHint, true);
@@ -108,6 +109,40 @@ test('creer_post, modifier_post, changer_statut, supprimer_post', async () => {
 
   const supprime = donnees(await appel('supprimer_post', { id: cree.id }));
   assert.equal(supprime.supprime, cree.id);
+});
+
+test('deplacer_post, cloner_post, fusionner_posts', async () => {
+  const ig = donnees(await appel('creer_post', { titre: 'Post Instagram', description: 'Texte IG', datePublication: '2026-11-20', plateformes: ['Instagram'] }));
+  const fb = donnees(await appel('creer_post', { titre: 'Post Facebook', description: 'Texte FB', datePublication: '2026-11-20', plateformes: ['Facebook'] }));
+
+  // Déplacer
+  const deplace = donnees(await appel('deplacer_post', { id: ig.id, datePublication: '2026-11-23', heure: '10:15' }));
+  assert.equal(deplace.date, '2026-11-23');
+  assert.equal(deplace.heure, '10:15');
+  assert.equal(deplace.statut, 'idee');
+  const datemauvaise = await appel('deplacer_post', { id: ig.id, datePublication: '2026-02-30' });
+  assert.equal(datemauvaise.isError, true);
+
+  // Cloner : une copie par date, toujours « idee »
+  await appel('changer_statut', { ids: [ig.id], statut: 'valide' });
+  const clones = donnees(await appel('cloner_post', { id: ig.id, dates: ['2026-11-30', '2026-12-07'] }));
+  assert.equal(clones.nombre, 2);
+  assert.deepEqual(clones.copies.map((c) => [c.date, c.statut]), [['2026-11-30', 'idee'], ['2026-12-07', 'idee']]);
+  assert.equal(donnees(await appel('lire_post', { id: ig.id })).statut, 'valide', 'l’original ne change pas');
+  assert.equal((await appel('cloner_post', { id: 'po-inconnu', dates: ['2026-11-30'] })).isError, true);
+
+  // Fusionner : un Instagram + un Facebook deviennent un seul post
+  const fusion = donnees(await appel('fusionner_posts', { ids: [ig.id, fb.id], choix: { description: fb.id } }));
+  assert.equal(fusion.supprime, fb.id);
+  assert.deepEqual(fusion.post.reseaux, ['Instagram', 'Facebook']);
+  assert.equal(donnees(await appel('lire_post', { id: ig.id })).description, 'Texte FB');
+  assert.equal((await appel('lire_post', { id: fb.id })).isError, true, 'l’autre post n’existe plus');
+  const commun = await appel('fusionner_posts', { ids: [ig.id, clones.copies[0].id] });
+  assert.equal(commun.isError, true);
+  assert.match(texte(commun), /Instagram/);
+
+  for (const id of [ig.id, ...clones.copies.map((c) => c.id)]) await appel('supprimer_post', { id });
+  assert.equal(donnees(await appel('apercu')).totalPosts, 18, 'rien ne traîne');
 });
 
 test('événements : création, lien avec un post, modification, suppression', async () => {

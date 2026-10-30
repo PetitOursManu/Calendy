@@ -279,6 +279,49 @@ fieldset{border:0;display:grid;gap:8px}
 .chip .ph-ico{display:inline-flex;align-items:center}
 .chip .ph-ico .ic{margin-top:0;font-size:12px}
 @media (max-width:640px){.ph-grid{grid-template-columns:1fr}}
+
+/* ---------- glisser-déposer, déplacer, cloner, fusionner ---------- */
+.chip-wrap{display:block;cursor:grab}
+.chip-wrap.dragging{opacity:.4}
+.day.drop-ok{outline:3px solid var(--denim);outline-offset:-3px;background:var(--denim-pale)}
+.day.drop-ok.copie{outline-style:dashed}
+.dnd-hint{margin:-4px 0 10px}
+@media (hover:none),(max-width:820px){.dnd-hint{display:none}}
+.dr-tools{display:flex;flex-wrap:wrap;gap:8px}
+.modal-form>.blk{margin:16px 20px 0}
+.modal-foot .spacer{margin-right:auto}
+dialog.modal.large{width:min(780px,calc(100vw - 28px))}
+#actionDlg[open]{display:flex;flex-direction:column;max-height:calc(100dvh - 24px);overflow:hidden}
+#actionDlg>.modal-form{display:flex;flex-direction:column;flex:1;min-height:0}
+#actionDlg .modal-head,#actionDlg .modal-foot{flex:none}
+#actionDlg .modal-form>.modal-foot{margin-top:0}
+#actionDlg .am-body{display:grid;align-content:start;flex:1;min-height:0;overflow:auto;padding-bottom:18px}
+#actionDlg .am-body>p,#actionDlg .am-body>label,#actionDlg .am-body>fieldset,#actionDlg .am-body>.blk{margin:16px 20px 0}
+.date-row{display:flex;gap:8px;align-items:center}
+.date-row input{flex:1}
+.date-rows{display:grid;gap:8px}
+.cand-list{display:grid;gap:6px;max-height:min(340px,45dvh);overflow:auto;padding:3px}
+.cand,.mg-opt{position:relative;display:block}
+.cand input,.mg-opt input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.cand-body,.mg-box{display:block;padding:8px 12px;border:1.5px solid var(--line-strong);border-radius:8px;background:var(--surface)}
+.cand input:checked+.cand-body,.mg-opt input:checked+.mg-box{background:var(--denim-wash);border-color:var(--denim)}
+.cand input:focus-visible+.cand-body,.mg-opt input:focus-visible+.mg-box{outline:3px solid var(--denim);outline-offset:2px}
+.cand-body small{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center;color:var(--mute);font-size:13.5px}
+.cand-body .nets{margin-right:0}
+.mg-field{border:0;display:grid;gap:6px;margin:16px 20px 0}
+.mg-pair,.mg-trio{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mg-trio{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.mg-box{white-space:pre-wrap;overflow-wrap:anywhere;height:100%}
+.mg-who{display:block;margin-bottom:3px;font-size:12.5px;font-weight:700;color:var(--mute)}
+.mg-opt input:checked+.mg-box .mg-who{color:var(--denim-ink)}
+.mg-img{display:block;width:100%;max-height:170px;object-fit:contain;margin-top:4px;border-radius:6px;background:#EEF1EF}
+.mg-auto h3{font-size:15px;margin-bottom:6px}
+.mg-auto dl{display:grid;gap:5px;font-size:14px}
+.mg-auto dt{display:inline;font-weight:700}
+.mg-auto dt::after{content:" : "}
+.mg-auto dd{display:inline;overflow-wrap:anywhere}
+.mg-auto small{color:var(--mute)}
+@media (max-width:640px){.mg-pair{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -295,6 +338,9 @@ fieldset{border:0;display:grid;gap:8px}
   <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
   <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="1.6"/><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v3c0 3 3 5 6 5s6-2 6-5V4M12 12v8M9 17l3 3 3-3"/></symbol>
 </svg>
 
 <div id="banner" role="alert" hidden>Connexion au serveur perdue. Les modifications ne sont pas enregistrées tant qu’elle ne revient pas.</div>
@@ -317,6 +363,7 @@ fieldset{border:0;display:grid;gap:8px}
 <dialog id="drawer" class="drawer" aria-labelledby="dlgTitle"></dialog>
 <dialog id="exportDlg" class="modal" aria-labelledby="dlgTitle"></dialog>
 <dialog id="tokenDlg" class="modal" aria-labelledby="dlgTitle"></dialog>
+<dialog id="actionDlg" class="modal" aria-labelledby="actionTitle"></dialog>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <noscript><p style="padding:24px">Calendy a besoin de JavaScript pour fonctionner.</p></noscript>
 
@@ -666,14 +713,16 @@ function gridCells(ym, garde, ajout) {
     if (col === 0) ctx = assignLanes(evs, iso, addDays(iso, 6));
     const posts = state.posts.filter((p) => p.datePublication === iso && garde(p)).sort(parHeure);
     const label = dayNum(iso) === 1 ? `1 ${MOIS_COURTS[monthIdx(iso)]}` : dayNum(iso);
-    cells += `<div class="day${iso.startsWith(ym) ? '' : ' out'}${col >= 5 ? ' weekend' : ''}${iso === today ? ' today' : ''}">
+    cells += `<div class="day${iso.startsWith(ym) ? '' : ' out'}${col >= 5 ? ' weekend' : ''}${iso === today ? ' today' : ''}" data-date="${iso}">
       <div class="day-head"><span class="dn" ${iso === today ? 'aria-label="Aujourd’hui"' : ''}>${label}</span>
         ${ajout ? `<button type="button" class="add" data-action="${ajout === 'evenement' ? 'new-event' : 'new-post'}" data-date="${iso}" aria-label="Ajouter ${ajout === 'evenement' ? 'un événement' : 'un post'} le ${esc(dateLongue(iso))}">${icon('i-plus')}</button>` : ''}</div>
       <div class="lanes">${laneHtml(iso, col, addDays(iso, 6 - col), ctx)}</div>
-      <div class="day-posts">${posts.map(chip).join('')}</div></div>`;
+      <div class="day-posts">${posts.map((p) => `<div class="chip-wrap" draggable="true" data-id="${esc(p.id)}">${chip(p)}</div>`).join('')}</div></div>`;
   }
   return cells;
 }
+
+const dndHint = () => '<p class="hint dnd-hint">Glisse un post sur un autre jour pour le déplacer ; garde Ctrl enfoncé (Option sur Mac) pour le cloner.</p>';
 
 function calendarView() {
   const ym = state.month;
@@ -699,6 +748,7 @@ function calendarView() {
       </div>
       <div class="filters" role="group" aria-label="Statuts affichés">${filters}</div>
     </div>
+    ${dndHint()}
     <div class="grid" role="presentation">${cells}</div>
     ${agendaHtml(ym)}
     ${empty}`;
@@ -778,7 +828,7 @@ function validateView() {
   const filtre = `<div class="val-bar"><nav class="mois-filtre" aria-label="Choisir le mois des propositions">${mois.map((ym) => chip(ym, titreMois(ym), parMois.get(ym).length)).join('')}${mois.length > 1 && !cal ? chip('all', 'Tous les mois', ideas.length) : ''}</nav>${vues}</div>`;
   if (cal) {
     const garde = (p) => p.statut === 'idee';
-    return `${filtre}<div class="grid" role="presentation">${gridCells(state.valMois, garde, false)}</div>${agendaHtml(state.valMois, garde)}`;
+    return `${filtre}${dndHint()}<div class="grid" role="presentation">${gridCells(state.valMois, garde, false)}</div>${agendaHtml(state.valMois, garde)}`;
   }
   const affiches = state.valMois === 'all' ? [...parMois] : [[state.valMois, parMois.get(state.valMois)]];
   const corps = state.valMois === 'all'
@@ -860,6 +910,10 @@ function postForm(p, isNew) {
     <form class="dr-form" data-form="post" data-id="${esc(p.id || '')}" ${isNew ? '' : 'data-edit'} novalidate>
       <div class="dr-body">
         <div class="form-error" role="alert" hidden></div>
+        ${isNew ? '' : `<div class="dr-tools" role="group" aria-label="Autres actions sur ce post">
+          <button type="button" class="btn small" data-action="move-post" data-id="${esc(p.id)}">${icon('i-move')}Déplacer</button>
+          <button type="button" class="btn small" data-action="clone-post" data-id="${esc(p.id)}">${icon('i-copy')}Cloner</button>
+          <button type="button" class="btn small" data-action="merge-post" data-id="${esc(p.id)}">${icon('i-merge')}Fusionner…</button></div>`}
         <label class="f"><span>Titre <em>obligatoire</em></span><input type="text" name="titre" maxlength="200" required value="${esc(p.titre)}"></label>
         <div class="row2">
           <label class="f"><span>Date de publication <em>obligatoire</em></span><input type="date" name="datePublication" required value="${esc(p.datePublication)}"></label>
@@ -1081,6 +1135,326 @@ async function downloadExcel(params, dlg) {
   toast(`${name} téléchargé.`);
 }
 
+/* ================= déplacer, cloner, fusionner ================= */
+const titreCourt = (t, n = 48) => (t.length > n ? `${t.slice(0, n - 1)}…` : t);
+const reseauxTxt = (p) => listeFr(p.plateformes);
+
+function ouvrirAction(html, { large = false } = {}) {
+  const dlg = $('#actionDlg');
+  dlg.className = `modal${large ? ' large' : ''}`;
+  dlg.innerHTML = html;
+  dlg.showModal();
+  return dlg;
+}
+
+const actionHead = (titre) => `<header class="modal-head"><h2 id="actionTitle">${esc(titre)}</h2><button type="button" class="icon-btn" data-action="close-dialog" aria-label="Fermer">${icon('i-x')}</button></header>`;
+
+function actionErreur(form, message) {
+  const el = form.querySelector('.form-error');
+  if (!el) return;
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+async function soumettreAction(form, fn) {
+  const btn = form.querySelector('[type=submit]');
+  btn.disabled = true;
+  try {
+    actionErreur(form, '');
+    await fn();
+  } catch (err) {
+    actionErreur(form, err.message || 'Une erreur est survenue.');
+    btn.disabled = false;
+  }
+}
+
+// Les modifications non enregistrées de la fiche ne sont pas envoyées avec ces actions : on le dit.
+const noteBrouillon = () => ($('#drawer').open && $('#drawer')._dirty ? '<p class="hint">Les modifications non enregistrées de la fiche ne sont pas prises en compte ici.</p>' : '');
+
+/** Après une action : on ferme la fiche et la fenêtre d’action si elles sont ouvertes, puis on recharge le calendrier. */
+async function actionTerminee() {
+  const drawer = $('#drawer');
+  if (drawer.open) { drawer._dirty = false; drawer.close(); }
+  const dlg = $('#actionDlg');
+  if (dlg.open) dlg.close();
+  await refresh();
+}
+
+function dansGrille(iso, ym) {
+  const first = `${ym}-01`;
+  const offset = weekday(first);
+  const nbJours = new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate();
+  const debut = addDays(first, -offset);
+  const fin = addDays(debut, Math.ceil((offset + nbJours) / 7) * 7 - 1);
+  return iso >= debut && iso <= fin;
+}
+
+// Si la date n’est pas visible dans le calendrier affiché, on va au bon mois pour que le résultat se voie.
+function montrerDate(iso) {
+  if (state.view !== 'calendrier' || dansGrille(iso, state.month)) return;
+  state.month = iso.slice(0, 7);
+  render();
+}
+
+/* ---- déplacer ---- */
+async function deplacerPost(id, date) {
+  const p = postById(id);
+  if (!p || p.datePublication === date) return;
+  const avant = p.datePublication;
+  await api('PUT', `/api/posts/${id}`, { datePublication: date });
+  await actionTerminee();
+  montrerDate(date);
+  toast(`« ${titreCourt(p.titre)} » déplacé au ${dateAvecJour(date)}.`, {
+    undo: () => guard(async () => { await api('PUT', `/api/posts/${id}`, { datePublication: avant }); await refresh(); toast('Changement annulé.'); }),
+  });
+}
+
+function openDeplacer(id) {
+  const p = postById(id);
+  if (!p) return;
+  const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Déplacer le post')}<div class="am-body">
+    <p><strong>${esc(p.titre)}</strong><br>Prévu le ${esc(dateAvecJour(p.datePublication))}${p.heure ? ` à ${esc(heureFr(p.heure))}` : ''}, sur ${esc(reseauxTxt(p))}.</p>
+    <p class="form-error" role="alert" hidden></p>
+    <label class="f"><span>Nouvelle date</span><input type="date" name="date" required value="${esc(p.datePublication)}"></label>
+    <p class="hint">Le statut, le texte et les photos ne changent pas.</p>${noteBrouillon()}</div>
+    <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Annuler</button><button type="submit" class="btn primary">${icon('i-move')}Déplacer</button></div></form>`);
+  const form = dlg.querySelector('form');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const date = form.elements.date.value;
+    if (!date) { actionErreur(form, 'Choisis une date.'); return; }
+    if (date === p.datePublication) { actionErreur(form, 'C’est déjà la date de ce post.'); return; }
+    soumettreAction(form, () => deplacerPost(id, date));
+  });
+}
+
+/* ---- cloner ---- */
+async function clonerVers(id, dates) {
+  const p = postById(id);
+  const { clones } = await api('POST', `/api/posts/${id}/cloner`, { dates });
+  await actionTerminee();
+  if (clones.length && !clones.some((c) => dansGrille(c.datePublication, state.month))) montrerDate(clones[0].datePublication);
+  const titre = p ? titreCourt(p.titre) : 'post';
+  toast(clones.length === 1
+    ? `Copie de « ${titre} » créée le ${dateAvecJour(clones[0].datePublication)}, à valider.`
+    : `${clones.length} copies de « ${titre} » créées, à valider.`, {
+    undo: () => guard(async () => { await Promise.all(clones.map((c) => api('DELETE', `/api/posts/${c.id}`))); await refresh(); toast(clones.length === 1 ? 'Copie annulée.' : 'Copies annulées.'); }),
+  });
+}
+
+const ligneDate = (v = '') => `<div class="date-row"><input type="date" name="date" value="${esc(v)}" aria-label="Date d’une copie"><button type="button" class="icon-btn" data-action="clone-del-date" aria-label="Retirer cette date">${icon('i-x')}</button></div>`;
+
+function openCloner(id) {
+  const p = postById(id);
+  if (!p) return;
+  const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Cloner le post')}<div class="am-body">
+    <p><strong>${esc(p.titre)}</strong><br>Prévu le ${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
+    <p class="form-error" role="alert" hidden></p>
+    <fieldset><legend>Dates des copies <em>une copie par date</em></legend>
+      <div class="date-rows" id="cloneDates">${ligneDate()}</div>
+      <div><button type="button" class="btn small" data-action="clone-add-date">${icon('i-plus')}Ajouter une date</button></div></fieldset>
+    <p class="hint">Chaque copie est créée en « idée à valider », avec le texte, les hashtags, l’événement et les photos du post. L’original ne change pas.</p>${noteBrouillon()}</div>
+    <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Annuler</button><button type="submit" class="btn primary">${icon('i-copy')}Créer les copies</button></div></form>`);
+  const form = dlg.querySelector('form');
+  form.elements.date.focus();
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const dates = [...new Set([...form.querySelectorAll('input[name=date]')].map((i) => i.value).filter(Boolean))];
+    if (!dates.length) { actionErreur(form, 'Choisis au moins une date.'); return; }
+    soumettreAction(form, () => clonerVers(id, dates));
+  });
+}
+
+/* ---- fusionner ---- */
+const memeReseau = (a, b) => a.plateformes.some((n) => b.plateformes.includes(n));
+const motsTitre = (t) => new Set(t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+
+// Posts qui peuvent être fusionnés avec `p` (aucun réseau en commun), les plus probables d’abord : même jour, titre proche, date proche.
+function candidatsFusion(p) {
+  const A = motsTitre(p.titre);
+  return state.posts
+    .filter((q) => q.id !== p.id && !memeReseau(p, q))
+    .map((q) => {
+      const B = motsTitre(q.titre);
+      const commun = [...A].filter((w) => B.has(w)).length;
+      const sim = A.size && B.size ? commun / Math.min(A.size, B.size) : 0;
+      const jours = Math.abs(diffDays(p.datePublication, q.datePublication));
+      return { q, score: (jours === 0 ? 2 : 0) + sim - Math.min(jours, 60) / 100 };
+    })
+    .sort((x, y) => y.score - x.score || x.q.datePublication.localeCompare(y.q.datePublication))
+    .map((x) => x.q);
+}
+
+const candidatHtml = (q, coche) => `<label class="cand"><input type="radio" name="autre" value="${esc(q.id)}"${coche ? ' checked' : ''}><span class="cand-body"><strong>${esc(q.titre)}</strong><small><span>${esc(dateAvecJour(q.datePublication))}</span><span class="nets">${q.plateformes.map(badgeReseau).join('')}</span><span>${esc(STATUTS[q.statut])}</span></small></span></label>`;
+
+// Étape 1 : choisir le second post.
+function openFusion(id, choisi = '') {
+  const p = postById(id);
+  if (!p) return;
+  const cands = candidatsFusion(p);
+  if (!cands.length) {
+    ouvrirAction(`<div class="modal-form">${actionHead('Fusionner avec un autre post')}<div class="am-body">
+      <p>Aucun autre post ne peut être fusionné avec « ${esc(p.titre)} » : la fusion réunit deux posts qui n’ont aucun réseau en commun (par exemple un post Instagram et un post Facebook).</p></div>
+      <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Fermer</button></div></div>`);
+    return;
+  }
+  const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Fusionner avec un autre post')}<div class="am-body">
+    <p><strong>${esc(p.titre)}</strong><br>${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
+    <p class="hint">Choisis le post à réunir avec celui-ci : un post qui n’a aucun réseau en commun avec lui, par exemple la version Facebook d’un post Instagram. Les deux n’en feront plus qu’un.</p>
+    <label class="f"><span>Chercher un post</span><input type="text" id="fusFiltre" placeholder="Un mot du titre…" autocomplete="off"></label>
+    <div class="cand-list blk" id="fusListe" role="radiogroup" aria-label="Posts pouvant être fusionnés"></div></div>
+    <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Annuler</button><button type="submit" class="btn primary" disabled>Continuer</button></div></form>`);
+  const form = dlg.querySelector('form');
+  const liste = dlg.querySelector('#fusListe');
+  const filtre = dlg.querySelector('#fusFiltre');
+  const suite = form.querySelector('[type=submit]');
+  let choisiId = choisi;
+  const dessiner = () => {
+    const motif = filtre.value.trim().toLowerCase();
+    const filtres = cands.filter((q) => !motif || q.titre.toLowerCase().includes(motif));
+    const vus = filtres.slice(0, motif ? 60 : 12);
+    if (choisiId && !vus.some((q) => q.id === choisiId)) choisiId = '';
+    liste.innerHTML = vus.length
+      ? vus.map((q) => candidatHtml(q, q.id === choisiId)).join('') + (filtres.length > vus.length ? '<p class="hint">Les plus proches sont affichés : cherche par titre pour trouver les autres.</p>' : '')
+      : '<p class="hint">Aucun post ne correspond.</p>';
+    suite.disabled = !choisiId;
+  };
+  liste.addEventListener('change', (e) => { if (e.target.name === 'autre') { choisiId = e.target.value; suite.disabled = false; } });
+  filtre.addEventListener('input', dessiner);
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (choisiId) openFusionChoix(id, choisiId); });
+  dessiner();
+}
+
+// Étape 2 : voir les deux versions et choisir ce qu’on garde quand elles diffèrent.
+function openFusionChoix(idA, idB) {
+  const a = postById(idA);
+  const b = postById(idB);
+  if (!a || !b) return;
+  const nomA = `Post ${reseauxTxt(a)}`;
+  const nomB = `Post ${reseauxTxt(b)}`;
+  const union = RESEAUX.filter((n) => a.plateformes.includes(n) || b.plateformes.includes(n));
+  const nomEv = (p) => { const ev = p.eventId && evById(p.eventId); return ev ? ev.nom : ''; };
+  const CHAMPS = [
+    ['titre', 'Titre', (p) => p.titre],
+    ['datePublication', 'Date de publication', (p) => dateAvecJour(p.datePublication)],
+    ['heure', 'Heure', (p) => heureFr(p.heure)],
+    ['description', 'Légende', (p) => p.description],
+    ['hashtags', 'Hashtags', (p) => p.hashtags],
+    ['imageIdee', 'Idée d’image', (p) => p.imageIdee],
+    ['eventId', 'Événement lié', nomEv],
+    ['atelier', 'Atelier ou thème', (p) => p.atelier],
+    ['angle', 'Angle du post', (p) => p.angle],
+    ['vigilance', 'Point de vigilance', (p) => p.vigilance],
+  ];
+  const conflits = [];
+  const repris = [];
+  for (const [cle, label, fmt] of CHAMPS) {
+    const va = a[cle] || '';
+    const vb = b[cle] || '';
+    if (va && vb && va !== vb) conflits.push([cle, label, fmt]);
+    else if (va || vb) repris.push({ label, texte: fmt(va ? a : b), source: va && vb ? '' : (va ? nomA : nomB) });
+  }
+  const choixHtml = ([cle, label, fmt]) => `<fieldset class="mg-field"><legend>${esc(label)}</legend><div class="mg-pair">${[a, b].map((p, i) =>
+    `<label class="mg-opt"><input type="radio" name="c-${cle}" value="${esc(p.id)}"${i === 0 ? ' checked' : ''}><span class="mg-box"><span class="mg-who">${esc(i === 0 ? nomA : nomB)}</span>${esc(fmt(p))}</span></label>`).join('')}</div></fieldset>`;
+
+  // Statut : si les deux diffèrent, on propose de repartir « à valider » (l’utilisateur décide), ou de garder l’un des deux.
+  const statutDiff = a.statut !== b.statut;
+  let statutHtml = '';
+  if (statutDiff) {
+    const opts = [{ val: a.id, label: STATUTS[a.statut], who: nomA }, { val: b.id, label: STATUTS[b.statut], who: nomB }];
+    if (a.statut !== 'idee' && b.statut !== 'idee') opts.push({ val: 'idee', label: STATUTS.idee, who: 'Remettre à valider (conseillé)' });
+    const defaut = a.statut === 'idee' ? a.id : b.statut === 'idee' ? b.id : 'idee';
+    statutHtml = `<fieldset class="mg-field"><legend>Statut</legend><div class="mg-trio">${opts.map((o) =>
+      `<label class="mg-opt"><input type="radio" name="c-statut" value="${esc(o.val)}"${o.val === defaut ? ' checked' : ''}><span class="mg-box"><span class="mg-who">${esc(o.who)}</span>${esc(o.label)}</span></label>`).join('')}</div></fieldset>`;
+  } else {
+    repris.push({ label: 'Statut', texte: STATUTS[a.statut], source: '' });
+  }
+
+  // Photo Instagram + Facebook : un seul visuel pour les deux réseaux.
+  const phA = a.photos && a.photos.meta;
+  const phB = b.photos && b.photos.meta;
+  let photoHtml = '';
+  if (phA && phB) {
+    const imgOpt = (p, who, i) => `<label class="mg-opt"><input type="radio" name="c-photo" value="${esc(p.id)}"${i === 0 ? ' checked' : ''}><span class="mg-box"><span class="mg-who">${esc(who)}</span><img class="mg-img" data-photo="${esc(p.id)}" data-slot="meta" alt="Photo du ${esc(who.toLowerCase())}"></span></label>`;
+    photoHtml = `<fieldset class="mg-field"><legend>Photo Instagram + Facebook</legend><div class="mg-trio">${imgOpt(a, nomA, 0)}${imgOpt(b, nomB, 1)}<label class="mg-opt"><input type="radio" name="c-photo" value="aucune"><span class="mg-box"><span class="mg-who">Sans photo</span>Ne garder aucune photo</span></label></div></fieldset>`;
+  } else if (phA || phB) {
+    repris.push({ label: 'Photo Instagram + Facebook', texte: 'photo jointe', source: phA ? nomA : nomB });
+  }
+
+  const nbChoix = conflits.length + (statutDiff ? 1 : 0) + (phA && phB ? 1 : 0);
+  const reprisHtml = repris.length
+    ? `<div class="blk mg-auto"><h3>Repris automatiquement</h3><dl>${repris.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(titreCourt(r.texte, 140))}${r.source ? ` <small>(${esc(r.source)})</small>` : ''}</dd></div>`).join('')}</dl></div>`
+    : '';
+  const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Fusionner deux posts')}<div class="am-body">
+    <p>« ${esc(titreCourt(a.titre))} » et « ${esc(titreCourt(b.titre))} » n’en feront plus qu’un, prévu sur <strong>${esc(listeFr(union))}</strong>. « ${esc(titreCourt(a.titre))} » est conservé ; <strong>« ${esc(titreCourt(b.titre))} » est supprimé</strong>.</p>
+    ${nbChoix ? '<p class="hint">Quand les deux posts diffèrent, choisis ce que tu gardes.</p>' : '<p class="hint">Les deux posts ne diffèrent sur aucun point : rien à choisir.</p>'}
+    ${conflits.map(choixHtml).join('')}${statutHtml}${photoHtml}${reprisHtml}
+    <p class="form-error" role="alert" hidden></p></div>
+    <div class="modal-foot"><button type="button" class="btn" data-action="merge-back" data-id="${esc(idA)}" data-autre="${esc(idB)}">Retour</button><span class="spacer"></span><button type="button" class="btn" data-action="close-dialog">Annuler</button><button type="submit" class="btn primary">${icon('i-merge')}Fusionner les deux posts</button></div></form>`, { large: true });
+  hydratePhotos(dlg);
+  const form = dlg.querySelector('form');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(form);
+    const choix = {};
+    for (const [cle] of conflits) choix[cle] = fd.get(`c-${cle}`);
+    if (statutDiff && fd.get('c-statut') !== 'idee') choix.statut = fd.get('c-statut');
+    if (phA && phB) choix.photo = fd.get('c-photo');
+    soumettreAction(form, async () => {
+      const res = await api('POST', '/api/posts/fusionner', { ids: [idA, idB], garder: idA, choix });
+      await actionTerminee();
+      montrerDate(res.post.datePublication);
+      toast(`Posts fusionnés : « ${titreCourt(res.post.titre)} » est prévu sur ${listeFr(res.post.plateformes)}.`);
+    });
+  });
+}
+
+/* ---- glisser-déposer : un post sur un autre jour le déplace ; avec Ctrl (Option sur Mac), il est cloné ---- */
+let glisse = '';
+let jourCible = null;
+const copieDemandee = (e) => e.ctrlKey || e.altKey || e.metaKey;
+
+function viderSurvol() {
+  if (jourCible) jourCible.classList.remove('drop-ok', 'copie');
+  jourCible = null;
+}
+function finGlisse() {
+  viderSurvol();
+  document.querySelectorAll('.chip-wrap.dragging').forEach((el) => el.classList.remove('dragging'));
+  glisse = '';
+}
+
+document.addEventListener('dragstart', (e) => {
+  const w = e.target instanceof Element ? e.target.closest('.chip-wrap') : null;
+  if (!w) return;
+  glisse = w.dataset.id;
+  e.dataTransfer.effectAllowed = 'copyMove';
+  e.dataTransfer.setData('text/plain', glisse);
+  w.classList.add('dragging');
+});
+document.addEventListener('dragover', (e) => {
+  if (!glisse) return;
+  const jour = e.target instanceof Element ? e.target.closest('.day[data-date]') : null;
+  if (!jour) { viderSurvol(); return; }
+  e.preventDefault();
+  const copie = copieDemandee(e);
+  e.dataTransfer.dropEffect = copie ? 'copy' : 'move';
+  if (jour !== jourCible) { viderSurvol(); jourCible = jour; jour.classList.add('drop-ok'); }
+  jour.classList.toggle('copie', copie);
+});
+document.addEventListener('drop', (e) => {
+  if (!glisse) return;
+  const jour = e.target instanceof Element ? e.target.closest('.day[data-date]') : null;
+  const id = glisse;
+  const copie = copieDemandee(e);
+  finGlisse();
+  if (!jour) return;
+  e.preventDefault();
+  const date = jour.dataset.date;
+  guard(() => (copie ? clonerVers(id, [date]) : deplacerPost(id, date)));
+});
+document.addEventListener('dragend', finGlisse);
+
 /* ================= événements du DOM ================= */
 document.addEventListener('click', (e) => {
   const t = e.target.closest('[data-action]');
@@ -1125,6 +1499,21 @@ document.addEventListener('click', (e) => {
     case 'photo-pick': t.closest('.ph-slot').querySelector('input[type=file]').click(); break;
     case 'photo-remove': photoRemoved(t.closest('form'), d.slot); break;
     case 'open-export': openExport(); break;
+    case 'move-post': openDeplacer(d.id); break;
+    case 'clone-post': openCloner(d.id); break;
+    case 'merge-post': openFusion(d.id); break;
+    case 'merge-back': openFusion(d.id, d.autre); break;
+    case 'clone-add-date': {
+      const rows = $('#cloneDates');
+      rows.insertAdjacentHTML('beforeend', ligneDate());
+      rows.lastElementChild.querySelector('input').focus();
+      break;
+    }
+    case 'clone-del-date': {
+      const rows = t.closest('.date-rows');
+      if (rows.children.length > 1) t.closest('.date-row').remove(); else rows.querySelector('input').value = '';
+      break;
+    }
     case 'close-dialog': closeDialog(t.closest('dialog')); break;
     case 'delete-arm':
       if (t.classList.contains('armed')) { guard(() => deleteCurrent(t.closest('form'))); break; }
@@ -1168,7 +1557,7 @@ $('#drawer').addEventListener('cancel', (e) => {
   if (dlg._dirty && !window.confirm('Abandonner les modifications en cours ?')) e.preventDefault();
 });
 $('#tokenDlg').addEventListener('cancel', (e) => e.preventDefault());
-for (const id of ['drawer', 'exportDlg', 'tokenDlg']) {
+for (const id of ['drawer', 'exportDlg', 'tokenDlg', 'actionDlg']) {
   $(`#${id}`).addEventListener('close', (e) => { e.target.innerHTML = ''; e.target._dirty = false; });
 }
 

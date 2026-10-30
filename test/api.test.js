@@ -293,6 +293,156 @@ test('cycle de vie d’un post : création, modification, statut, suppression', 
   assert.equal((await api('GET', `/api/posts/${post.id}`)).status, 404);
 });
 
+const fichiersImages = () => fs.readdirSync(path.join(dataDir, 'images'));
+
+test('déplacer un post : la date change, le reste est conservé', async () => {
+  const { json: post } = await api('POST', '/api/posts', {
+    titre: 'À déplacer', datePublication: '2026-11-10', heure: '11:30', plateformes: ['Instagram', 'Facebook'], statut: 'valide',
+  });
+  const moved = await api('PUT', `/api/posts/${post.id}`, { datePublication: '2026-11-12' });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.json.datePublication, '2026-11-12');
+  assert.equal(moved.json.heure, '11:30');
+  assert.equal(moved.json.statut, 'valide', 'déplacer ne change pas le statut');
+  assert.equal((await api('PUT', `/api/posts/${post.id}`, { datePublication: '2026-02-30' })).status, 400);
+  await api('DELETE', `/api/posts/${post.id}`);
+});
+
+test('cloner un post : une copie « idée à valider » par date, avec ses propres photos', async () => {
+  const { json: post } = await api('POST', '/api/posts', {
+    titre: 'Original', description: 'Légende', hashtags: '#ESAT', datePublication: '2026-11-10', heure: '09:00',
+    plateformes: ['Instagram', 'Facebook'], eventId: 'ev-duoday', statut: 'publie',
+  });
+  await envoyerPhoto(post.id, 'meta', JPEG, 'image/jpeg');
+  const avant = fichiersImages().length;
+
+  const res = await api('POST', `/api/posts/${post.id}/cloner`, { dates: ['2026-11-24', '2026-11-17', '2026-11-17'] });
+  assert.equal(res.status, 201);
+  assert.equal(res.json.clones.length, 2, 'doublons de dates ignorés');
+  assert.deepEqual(res.json.clones.map((c) => c.datePublication), ['2026-11-17', '2026-11-24'], 'triées par date');
+  for (const c of res.json.clones) {
+    assert.notEqual(c.id, post.id);
+    assert.equal(c.statut, 'idee', 'une copie repart « à valider »');
+    assert.equal(c.titre, 'Original');
+    assert.equal(c.description, 'Légende');
+    assert.equal(c.heure, '09:00');
+    assert.equal(c.eventId, 'ev-duoday');
+    assert.deepEqual(c.plateformes, ['Instagram', 'Facebook']);
+    assert.ok(c.photos.meta && c.photos.meta.fichier !== (await api('GET', `/api/posts/${post.id}`)).json.photos.meta.fichier, 'fichier photo propre');
+    const lue = await api('GET', `/api/posts/${c.id}/photo/meta`, undefined, { raw: true });
+    assert.deepEqual(Buffer.from(await lue.arrayBuffer()), JPEG, 'photo copiée à l’identique');
+  }
+  assert.equal(fichiersImages().length, avant + 2);
+  assert.equal((await api('GET', `/api/posts/${post.id}`)).json.statut, 'publie', 'l’original ne bouge pas');
+
+  // Les copies sont indépendantes de l'original : supprimer l'une n'efface pas les photos des autres
+  await api('DELETE', `/api/posts/${res.json.clones[0].id}`);
+  assert.equal((await api('GET', `/api/posts/${post.id}/photo/meta`, undefined, { raw: true })).status, 200);
+  assert.equal((await api('GET', `/api/posts/${res.json.clones[1].id}/photo/meta`, undefined, { raw: true })).status, 200);
+
+  // Cloner sur le même jour est permis ; les entrées invalides sont refusées
+  assert.equal((await api('POST', `/api/posts/${post.id}/cloner`, { dates: ['2026-11-10'] })).status, 201);
+  assert.equal((await api('POST', `/api/posts/${post.id}/cloner`, {})).status, 400);
+  assert.equal((await api('POST', `/api/posts/${post.id}/cloner`, { dates: [] })).status, 400);
+  assert.equal((await api('POST', `/api/posts/${post.id}/cloner`, { dates: ['2026-13-01'] })).status, 400);
+  assert.equal((await api('POST', `/api/posts/${post.id}/cloner`, { dates: ['demain'] })).status, 400);
+  assert.equal((await api('POST', '/api/posts/po-inconnu/cloner', { dates: ['2026-11-10'] })).status, 404);
+
+  const tous = (await api('GET', '/api/posts?q=Original')).json;
+  for (const p of tous) await api('DELETE', `/api/posts/${p.id}`);
+  assert.equal(fichiersImages().length, avant - 1, 'plus aucune photo de ces posts sur le disque');
+});
+
+test('fusionner un post Instagram et un post Facebook en un seul', async () => {
+  const ig = (await api('POST', '/api/posts', {
+    titre: 'Semaine du goût', description: 'Légende Instagram', hashtags: '#goût', datePublication: '2026-11-10', heure: '11:00',
+    plateformes: ['Instagram'], statut: 'valide', atelier: 'Cuisine',
+  })).json;
+  const fb = (await api('POST', '/api/posts', {
+    titre: 'Semaine du goût (Facebook)', description: 'Légende Facebook plus longue', datePublication: '2026-11-10',
+    plateformes: ['Facebook'], statut: 'valide', angle: 'Angle FB', eventId: 'ev-duoday',
+  })).json;
+  await envoyerPhoto(ig.id, 'meta', JPEG, 'image/jpeg');
+  const photoFb = (await envoyerPhoto(fb.id, 'meta', PNG, 'image/png')).json.photos.meta.fichier;
+  const photoIg = (await api('GET', `/api/posts/${ig.id}`)).json.photos.meta.fichier;
+
+  // Choix explicites : texte et photo de Facebook, titre de l'Instagram
+  const res = await api('POST', '/api/posts/fusionner', { ids: [ig.id, fb.id], choix: { description: fb.id, photo: fb.id } });
+  assert.equal(res.status, 200);
+  const p = res.json.post;
+  assert.equal(res.json.supprime, fb.id);
+  assert.equal(p.id, ig.id, 'le premier post garde son identifiant');
+  assert.deepEqual(p.plateformes, ['Instagram', 'Facebook']);
+  assert.equal(p.titre, 'Semaine du goût', 'sans choix : le post gardé');
+  assert.equal(p.description, 'Légende Facebook plus longue', 'choix : Facebook');
+  assert.equal(p.hashtags, '#goût');
+  assert.equal(p.heure, '11:00');
+  assert.equal(p.atelier, 'Cuisine');
+  assert.equal(p.angle, 'Angle FB', 'champ vide du post gardé : repris de l’autre');
+  assert.equal(p.eventId, 'ev-duoday', 'idem pour l’événement');
+  assert.equal(p.statut, 'valide', 'statuts identiques : conservé');
+  assert.equal(p.photos.meta.fichier, photoFb, 'photo choisie');
+  assert.equal((await api('GET', `/api/posts/${fb.id}`)).status, 404, 'l’autre post est supprimé');
+  assert.ok(!fichiersImages().includes(photoIg), 'photo non retenue effacée');
+  assert.ok(fichiersImages().includes(photoFb), 'photo retenue conservée');
+  const lue = await api('GET', `/api/posts/${ig.id}/photo/meta`, undefined, { raw: true });
+  assert.deepEqual(Buffer.from(await lue.arrayBuffer()), PNG);
+  await api('DELETE', `/api/posts/${ig.id}`);
+  assert.ok(!fichiersImages().includes(photoFb));
+});
+
+test('fusionner : valeurs par défaut, statuts différents, photo « aucune » et garder', async () => {
+  const a = (await api('POST', '/api/posts', { titre: 'A', datePublication: '2026-11-11', plateformes: ['Instagram'], statut: 'valide' })).json;
+  const b = (await api('POST', '/api/posts', { titre: 'B', description: 'Texte B', datePublication: '2026-11-12', plateformes: ['Facebook', 'LinkedIn'], statut: 'refuse' })).json;
+  await envoyerPhoto(a.id, 'meta', JPEG, 'image/jpeg');
+  await envoyerPhoto(b.id, 'linkedin', PNG, 'image/png');
+  const photoA = (await api('GET', `/api/posts/${a.id}`)).json.photos.meta.fichier;
+  const photoLi = (await api('GET', `/api/posts/${b.id}`)).json.photos.linkedin.fichier;
+
+  // On garde B : il conserve son identifiant, sa date et son titre
+  const res = await api('POST', '/api/posts/fusionner', { ids: [a.id, b.id], garder: b.id, choix: { photo: 'aucune' } });
+  assert.equal(res.status, 200);
+  const p = res.json.post;
+  assert.equal(p.id, b.id);
+  assert.equal(res.json.supprime, a.id);
+  assert.deepEqual(p.plateformes, ['Instagram', 'Facebook', 'LinkedIn']);
+  assert.equal(p.titre, 'B');
+  assert.equal(p.datePublication, '2026-11-12');
+  assert.equal(p.description, 'Texte B');
+  assert.equal(p.statut, 'idee', 'statuts différents sans choix : à re-valider');
+  assert.equal(p.photos.meta, null, 'photo « aucune »');
+  assert.equal(p.photos.linkedin.fichier, photoLi, 'la photo LinkedIn suit');
+  assert.ok(!fichiersImages().includes(photoA), 'photo écartée effacée');
+  assert.ok(fichiersImages().includes(photoLi));
+  await api('DELETE', `/api/posts/${b.id}`);
+});
+
+test('fusionner : refus des cas invalides, sans rien modifier', async () => {
+  const ig = (await api('POST', '/api/posts', { titre: 'IG', datePublication: '2026-11-13', plateformes: ['Instagram', 'Facebook'] })).json;
+  const fb = (await api('POST', '/api/posts', { titre: 'FB', datePublication: '2026-11-13', plateformes: ['Facebook'] })).json;
+  const li = (await api('POST', '/api/posts', { titre: 'LI', datePublication: '2026-11-13', plateformes: ['LinkedIn'] })).json;
+  const nb = async () => (await api('GET', '/api/posts')).json.length;
+  const avant = await nb();
+
+  const commun = await api('POST', '/api/posts/fusionner', { ids: [ig.id, fb.id] });
+  assert.equal(commun.status, 400);
+  assert.match(commun.json.error, /Facebook/, 'réseau en commun nommé');
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id] })).status, 400);
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, ig.id] })).status, 400);
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, li.id, fb.id] })).status, 400);
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, 'po-inconnu'] })).status, 404);
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, li.id], garder: fb.id })).status, 400);
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, li.id], choix: { titre: fb.id } })).status, 400, 'choix hors des deux posts');
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, li.id], choix: { couleur: ig.id } })).status, 400, 'champ inconnu');
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, li.id], choix: { titre: 'aucune' } })).status, 400, '« aucune » seulement pour la photo');
+  assert.equal(await nb(), avant, 'aucun post supprimé par les refus');
+
+  // Une fusion qui réussit retire bien un post
+  assert.equal((await api('POST', '/api/posts/fusionner', { ids: [ig.id, li.id] })).status, 200);
+  assert.equal(await nb(), avant - 1);
+  for (const id of [ig.id, fb.id]) await api('DELETE', `/api/posts/${id}`);
+});
+
 test('filtres de liste', async () => {
   const octobre = await api('GET', '/api/posts?du=2026-10-12&au=2026-10-18');
   assert.deepEqual(
