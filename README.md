@@ -1,4 +1,4 @@
-<p align="center"><img src="assets/logo.svg" width="88" alt="Logo de Calendy"></p>
+<p align="center"><img src="assets/logo.png" width="220" alt="Logo de Calendy"></p>
 
 # Calendy
 
