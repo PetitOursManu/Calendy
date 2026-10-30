@@ -110,6 +110,7 @@ Tu proposes des idées de posts ; c'est l'utilisateur qui décide lesquels sont 
 - Rattache chaque post à son événement (eventId) quand il y en a un ; sinon laisse vide (contenu « coulisses »).
 - Crée toujours les posts avec le statut « idee » (c'est le défaut). Ne passe un post à « valide » ou « refuse » que si l'utilisateur le demande explicitement.
 - description = légende prête à publier, sans hashtags ; hashtags à part ; imageIdee = description de la photo à prévoir.
+- Déplacer (deplacer_post), cloner (cloner_post) et fusionner (fusionner_posts) des posts : seulement sur demande de l'utilisateur. Une copie est toujours « idee ». Avant de fusionner deux posts qui diffèrent, montre-lui les deux textes et demande lequel garder : le post écarté est supprimé.
 - Photos : facultatives, une par visuel (Instagram + Facebook partagent la même, LinkedIn a la sienne). Tu ne crées pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur.
 - Sujets sensibles (santé mentale, handicap psychique) : message centré sur le travail et la fierté collective, jamais de diagnostic ni de personne identifiable, et mets un point de vigilance qui demande une validation avant publication. Ne nomme pas une entreprise partenaire sans son accord.`;
 
@@ -220,6 +221,79 @@ server.registerTool(
     annotations: { ...ecriture, idempotentHint: true },
   },
   safe(async ({ id, ...champs }) => ok(await call('PUT', `/api/posts/${encodeURIComponent(id)}`, champs))),
+);
+
+server.registerTool(
+  'deplacer_post',
+  {
+    title: 'Déplacer un post à une autre date',
+    description:
+      "Change la date de publication d'un post (et, si demandé, son heure). Le statut et le reste du post ne changent pas. À n'utiliser que sur demande de l'utilisateur.",
+    inputSchema: {
+      id: z.string().describe('Identifiant du post.'),
+      datePublication: dateSchema('Nouvelle date de publication, au format AAAA-MM-JJ.'),
+      heure: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'format HH:MM').optional().describe('Nouvelle heure, au format HH:MM. Omettre pour garder l’heure actuelle.'),
+    },
+    annotations: { ...ecriture, idempotentHint: true },
+  },
+  safe(async ({ id, ...champs }) => {
+    const post = await call('PUT', `/api/posts/${encodeURIComponent(id)}`, champs);
+    return ok({ id: post.id, titre: post.titre, date: post.datePublication, heure: post.heure || null, statut: post.statut });
+  }),
+);
+
+server.registerTool(
+  'cloner_post',
+  {
+    title: 'Cloner un post sur d’autres dates',
+    description:
+      "Crée une copie du post (texte, hashtags, événement, photos) pour chaque date demandée. Les copies sont toujours créées « idee » (à valider), même si l'original est validé ou publié ; l'original ne change pas. À n'utiliser que sur demande de l'utilisateur.",
+    inputSchema: {
+      id: z.string().describe('Identifiant du post à copier.'),
+      dates: z.array(dateSchema('Date de publication d’une copie, AAAA-MM-JJ.')).min(1).max(60).describe('Une date par copie à créer.'),
+    },
+    annotations: ecriture,
+  },
+  safe(async ({ id, dates }) => {
+    const { clones } = await call('POST', `/api/posts/${encodeURIComponent(id)}/cloner`, { dates });
+    return ok({ nombre: clones.length, copies: clones.map((c) => ({ id: c.id, date: c.datePublication, titre: c.titre, statut: c.statut })) });
+  }),
+);
+
+const choixFusion = z.string().describe('Identifiant de celui des deux posts dont on reprend la valeur.');
+server.registerTool(
+  'fusionner_posts',
+  {
+    title: 'Fusionner deux posts (ex. Instagram + Facebook)',
+    description:
+      "Fusionne deux posts qui n'ont aucun réseau en commun (typiquement un post Instagram et un post Facebook) en un seul, prévu sur les réseaux des deux. Le premier post garde son identifiant (ou celui de `garder`) ; l'autre est supprimé, définitivement. Par défaut chaque champ vient du post gardé, ou de l'autre quand le post gardé n'a rien ; `choix` permet de désigner l'autre post pour un champ. Si les statuts diffèrent, le résultat repart « idee » sauf choix contraire. À n'utiliser que sur demande explicite de l'utilisateur, après lui avoir montré les deux posts s'ils diffèrent.",
+    inputSchema: {
+      ids: z.array(z.string()).length(2).describe('Identifiants des deux posts à fusionner.'),
+      garder: z.string().optional().describe('Identifiant du post qui sert de base et garde son identifiant. Par défaut : le premier de ids.'),
+      choix: z
+        .object({
+          titre: choixFusion.optional(),
+          datePublication: choixFusion.optional(),
+          heure: choixFusion.optional(),
+          description: choixFusion.optional(),
+          hashtags: choixFusion.optional(),
+          imageIdee: choixFusion.optional(),
+          eventId: choixFusion.optional(),
+          atelier: choixFusion.optional(),
+          angle: choixFusion.optional(),
+          vigilance: choixFusion.optional(),
+          statut: choixFusion.optional(),
+          photo: z.string().optional().describe("Photo Instagram + Facebook : identifiant du post dont on garde la photo, ou « aucune »."),
+        })
+        .optional()
+        .describe('Champs pour lesquels on ne veut pas la valeur par défaut.'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+  },
+  safe(async ({ ids, garder, choix }) => {
+    const { post, supprime } = await call('POST', '/api/posts/fusionner', { ids, garder, choix });
+    return ok({ supprime, post: { id: post.id, titre: post.titre, date: post.datePublication, reseaux: post.plateformes, statut: post.statut, photos: post.photos } });
+  }),
 );
 
 const VISUELS = { instagram_facebook: 'meta', linkedin: 'linkedin' };

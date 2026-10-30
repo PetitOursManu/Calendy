@@ -355,6 +355,131 @@ function filterPosts(query) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Cloner et fusionner des posts                                      */
+/* ------------------------------------------------------------------ */
+
+const CLONE_MAX_DATES = 60;
+
+/** Copie les fichiers photo d'un post pour son clone : chaque post garde ses propres fichiers, supprimer l'un ne touche pas l'autre. */
+function copierPhotos(photos, idClone) {
+  const out = photosVides();
+  const crees = [];
+  const source = normaliserPhotos(photos);
+  for (const slot of PHOTO_SLOTS) {
+    const f = source[slot];
+    if (!f) continue;
+    const fichier = `${idClone}-${slot}-${crypto.randomBytes(3).toString('hex')}${path.extname(f.fichier) || '.jpg'}`;
+    try {
+      fs.copyFileSync(cheminPhoto(f.fichier), cheminPhoto(fichier));
+    } catch {
+      continue; // fichier d'origine absent : le clone n'a simplement pas cette photo
+    }
+    out[slot] = { ...f, fichier };
+    crees.push(fichier);
+  }
+  return { photos: out, crees };
+}
+
+/** Une copie du post par date demandée. Les copies repartent en « idée à valider » : c'est l'utilisateur qui décide. */
+function clonerPost(id, body) {
+  const source = db.posts.find((p) => p.id === id);
+  if (!source) throw new HttpError(404, 'Post introuvable.');
+  if (!body || !Array.isArray(body.dates) || !body.dates.length) {
+    throw new HttpError(400, 'Champ « dates » attendu : une liste de dates au format AAAA-MM-JJ.');
+  }
+  const dates = [...new Set(body.dates.map((d) => date(d, 'dates', { required: true })))].sort();
+  if (dates.length > CLONE_MAX_DATES) throw new HttpError(400, `Maximum ${CLONE_MAX_DATES} dates à la fois.`);
+  const clones = [];
+  const fichiers = [];
+  try {
+    for (const d of dates) {
+      const idClone = newId('po');
+      const { photos, crees } = copierPhotos(source.photos, idClone);
+      fichiers.push(...crees);
+      clones.push({ ...source, id: idClone, datePublication: d, plateformes: [...source.plateformes], statut: 'idee', photos });
+    }
+    db.posts.push(...clones);
+    saveDb();
+  } catch (err) {
+    db.posts = db.posts.filter((p) => !clones.includes(p));
+    fichiers.forEach((f) => supprimerFichierPhoto({ fichier: f }));
+    throw err;
+  }
+  return { status: 201, body: { clones } };
+}
+
+const CHAMPS_FUSION = ['titre', 'datePublication', 'heure', 'description', 'hashtags', 'imageIdee', 'eventId', 'atelier', 'angle', 'vigilance', 'statut'];
+const estVide = (v) => v === undefined || v === null || v === '';
+
+/**
+ * Fusionne deux posts qui n'ont aucun réseau en commun (typiquement un Instagram et un Facebook) en un seul,
+ * prévu sur l'union de leurs réseaux. Le post `garder` (le premier par défaut) conserve son identifiant, l'autre est supprimé.
+ * Pour chaque champ, `choix[champ]` désigne le post dont on prend la valeur ; sans choix, on prend celle du post gardé,
+ * ou celle de l'autre quand le post gardé n'a rien. `choix.photo` règle la photo Instagram + Facebook (id d'un post, ou « aucune »).
+ * Si les statuts diffèrent et qu'aucun n'est choisi, le post fusionné repart en « idée à valider ».
+ */
+function fusionnerPosts(body) {
+  if (!body || !Array.isArray(body.ids) || body.ids.length !== 2 || body.ids[0] === body.ids[1]) {
+    throw new HttpError(400, 'Champ « ids » : indique exactement deux posts différents.');
+  }
+  const [a, b] = body.ids.map((id) => {
+    const p = db.posts.find((x) => x.id === id);
+    if (!p) throw new HttpError(404, `Post introuvable : ${id}`);
+    return p;
+  });
+  const garderId = body.garder === undefined || body.garder === null ? a.id : body.garder;
+  if (garderId !== a.id && garderId !== b.id) throw new HttpError(400, 'Champ « garder » : indique l’identifiant de l’un des deux posts.');
+  const base = garderId === a.id ? a : b;
+  const autre = base === a ? b : a;
+
+  const commun = base.plateformes.filter((n) => autre.plateformes.includes(n));
+  if (commun.length) {
+    throw new HttpError(400, `Fusion impossible : les deux posts sont déjà prévus sur ${commun.join(' et ')}. Fusionne des posts qui n’ont aucun réseau en commun (par exemple un Instagram et un Facebook).`);
+  }
+
+  const choix = body.choix === undefined || body.choix === null ? {} : body.choix;
+  if (typeof choix !== 'object' || Array.isArray(choix)) throw new HttpError(400, 'Champ « choix » : un objet est attendu.');
+  const permis = [...CHAMPS_FUSION, 'photo'];
+  for (const [cle, valeur] of Object.entries(choix)) {
+    if (!permis.includes(cle)) throw new HttpError(400, `Champ de fusion inconnu : « ${cle} ». Valeurs possibles : ${permis.join(', ')}.`);
+    if (valeur !== a.id && valeur !== b.id && !(cle === 'photo' && valeur === 'aucune')) {
+      throw new HttpError(400, `choix.${cle} : indique l’identifiant de l’un des deux posts${cle === 'photo' ? ' (ou « aucune »)' : ''}.`);
+    }
+  }
+  const parId = (id) => (id === a.id ? a : b);
+
+  const fusion = { ...base, plateformes: PLATEFORMES.filter((n) => base.plateformes.includes(n) || autre.plateformes.includes(n)) };
+  for (const champ of CHAMPS_FUSION) {
+    if (has(choix, champ)) fusion[champ] = parId(choix[champ])[champ];
+    else if (estVide(base[champ]) && !estVide(autre[champ])) fusion[champ] = autre[champ];
+  }
+  if (!has(choix, 'statut') && base.statut !== autre.statut) fusion.statut = 'idee';
+
+  const pb = normaliserPhotos(base.photos);
+  const pa = normaliserPhotos(autre.photos);
+  const photos = photosVides();
+  if (has(choix, 'photo')) photos.meta = choix.photo === 'aucune' ? null : normaliserPhotos(parId(choix.photo).photos).meta;
+  else photos.meta = pb.meta || pa.meta;
+  photos.linkedin = pb.linkedin || pa.linkedin;
+  fusion.photos = photos;
+
+  // Les fichiers photo qui ne servent plus à personne sont supprimés une fois les données enregistrées.
+  const gardes = new Set(PHOTO_SLOTS.map((s) => photos[s] && photos[s].fichier).filter(Boolean));
+  const aSupprimer = [pb, pa].flatMap((ph) => PHOTO_SLOTS.map((s) => ph[s])).filter((f) => f && !gardes.has(f.fichier));
+
+  const avant = db.posts;
+  db.posts = avant.filter((p) => p !== autre).map((p) => (p === base ? fusion : p));
+  try {
+    saveDb();
+  } catch (err) {
+    db.posts = avant;
+    throw err;
+  }
+  aSupprimer.forEach(supprimerFichierPhoto);
+  return { post: fusion, supprime: autre.id };
+}
+
+/* ------------------------------------------------------------------ */
 /* Export Excel                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -654,6 +779,12 @@ route('POST', /^\/api\/posts\/statut$/, ({ body }) => {
   saveDb();
   return { ok: true, modifies: trouves.length, statut: nouveau };
 });
+
+// Fusion de deux posts (ex. un Instagram + un Facebook) : { ids: [a, b], garder?, choix? } — voir fusionnerPosts
+route('POST', /^\/api\/posts\/fusionner$/, ({ body }) => fusionnerPosts(body));
+
+// Copies d'un post sur d'autres dates : { dates: ['2026-11-03', ...] }
+route('POST', /^\/api\/posts\/([\w-]+)\/cloner$/, ({ params, body }) => clonerPost(params[0], body));
 
 route('GET', /^\/api\/posts\/([\w-]+)$/, ({ params }) => {
   const post = db.posts.find((p) => p.id === params[0]);

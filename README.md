@@ -33,6 +33,14 @@ Les données sont dans `data/data.json`, avec une copie `data.json.bak` à chaqu
 
 Chaque post contient : titre, légende, hashtags, idée d'image, date et heure de publication, réseaux (Instagram, Facebook, LinkedIn), événement lié, atelier, angle, point de vigilance et statut (idée à valider, validé, refusé, publié). Une **photo facultative** peut être jointe à chaque post : une pour Instagram + Facebook (la même sur les deux), une pour LinkedIn. Elle s'ajoute dans le formulaire du post (le bouton n'apparaît que pour les réseaux cochés), s'affiche dans « À valider » et se retire d'un clic. Les photos sont réduites à 1 600 px et enregistrées en JPEG par le navigateur avant l'envoi. La légende est comptée avec les hashtags, et l'appli prévient quand elle dépasse la limite d'Instagram (2 200 caractères) ou de LinkedIn (3 000).
 
+### Déplacer, cloner et fusionner des posts
+
+Ces trois actions sont dans la fiche d'un post (boutons **Déplacer**, **Cloner** et **Fusionner…** en haut), donc aussi sur téléphone.
+
+- **Déplacer** : choisis une nouvelle date. Le statut, le texte et les photos ne changent pas. Sur le calendrier (vues Calendrier et À valider en mode Calendrier), on peut aussi **glisser un post sur un autre jour** ; un bouton Annuler apparaît.
+- **Cloner** : une copie du post par date, plusieurs dates à la fois. Les copies reprennent le texte, les hashtags, l'événement et les photos (chaque copie a ses propres fichiers) et repartent en **idée à valider**, même si l'original est validé ou publié. Sur le calendrier, **glisser un post sur un jour avec Ctrl enfoncé** (Option sur Mac) crée une copie. Annuler supprime les copies.
+- **Fusionner** : réunit deux posts qui n'ont **aucun réseau en commun** (typiquement le post Instagram et le post Facebook d'un même sujet) en un seul post prévu sur les deux réseaux. Tu choisis le second post dans une liste (les plus probables en premier : même jour, titre proche), puis, pour chaque point où les deux diffèrent (titre, légende, hashtags, date, photo…), la version à garder. Ce qui n'existe que d'un côté est repris automatiquement. Si les statuts diffèrent, le choix proposé par défaut est « idée à valider ». Le second post est **supprimé** (il n'y a pas d'annulation) ; la photo écartée est effacée.
+
 ### Export Excel
 
 Le bouton **Exporter en Excel** ouvre une fenêtre : statuts à inclure (validés et publiés par défaut), période, et un compteur qui annonce combien de posts seront exportés. Le fichier contient deux feuilles :
@@ -71,8 +79,10 @@ Ce que tu peux demander :
 - « Qu'est-ce qui attend ma validation ? »
 - « Valide les deux posts Halloween et refuse celui sur la santé mentale. »
 - « Exporte les posts validés de novembre en Excel. »
+- « Déplace le post de la Semaine du Goût au 14 octobre. » / « Clone ce post sur les 3 et 10 novembre. »
+- « Fusionne le post Instagram et le post Facebook sur le Téléthon » (Claude te montre les deux textes s'ils diffèrent et demande lequel garder).
 
-Claude peut aussi joindre ou retirer une photo (`ajouter_photo`, `retirer_photo`) à partir d'un fichier de ton ordinateur ; il ne crée pas d'image. Claude crée toujours les posts en **idée à valider** : c'est toi qui décides. Il ne valide ou ne refuse que si tu le demandes. Les fichiers Excel sont enregistrés dans Téléchargements (ou dans `CALENDY_EXPORT_DIR`). La page affichée se met à jour toute seule dans les 20 secondes qui suivent une modification faite par Claude.
+Claude peut aussi joindre ou retirer une photo (`ajouter_photo`, `retirer_photo`) à partir d'un fichier de ton ordinateur ; il ne crée pas d'image. Claude crée toujours les posts en **idée à valider** : c'est toi qui décides. Il ne valide ou ne refuse que si tu le demandes, et ne déplace, ne clone ou ne fusionne (`deplacer_post`, `cloner_post`, `fusionner_posts`) que sur ta demande. Les fichiers Excel sont enregistrés dans Téléchargements (ou dans `CALENDY_EXPORT_DIR`). La page affichée se met à jour toute seule dans les 20 secondes qui suivent une modification faite par Claude.
 
 Si l'appli est sur un serveur, mets son adresse dans `CALENDY_URL`.
 
@@ -106,7 +116,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 27 tests : API, photos, export Excel, connecteur MCP
+npm test                # 33 tests : API, photos, clonage, fusion, export Excel, connecteur MCP
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -116,9 +126,11 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | Route | Rôle |
 | --- | --- |
 | `GET /state` | Tout le calendrier (événements et posts) |
-| `GET/POST /posts`, `GET/PUT/DELETE /posts/:id` | Posts. Filtres de liste : `statut`, `du`, `au`, `q`, `eventId` |
+| `GET/POST /posts`, `GET/PUT/DELETE /posts/:id` | Posts (déplacer = `PUT` avec `datePublication`). Filtres de liste : `statut`, `du`, `au`, `q`, `eventId` |
 | `POST /posts/statut` | Change le statut de plusieurs posts : `{ "ids": [...], "statut": "valide" }` |
 | `GET/POST /evenements`, `GET/PUT/DELETE /evenements/:id` | Événements (supprimer un événement détache ses posts, sans les supprimer) |
+| `POST /posts/:id/cloner` | Copies d'un post : `{ "dates": ["2026-11-03", "2026-11-10"] }`. Une copie « idée à valider » par date (doublons ignorés, 60 maximum), photos copiées. Répond `201 { "clones": [...] }` |
+| `POST /posts/fusionner` | Fusionne deux posts sans réseau en commun : `{ "ids": [a, b], "garder": a, "choix": { "description": b, "photo": b } }`. `garder` (le premier par défaut) conserve son identifiant ; l'autre est supprimé. Sans `choix` pour un champ, on prend la valeur du post gardé (ou de l'autre si le premier n'a rien) ; `choix.photo` peut valoir `"aucune"`. Statuts différents sans choix : `idee`. Répond `{ "post": {...}, "supprime": id }` |
 | `PUT /posts/:id/photo/meta`, `PUT /posts/:id/photo/linkedin` | Joint une photo (corps = image JPEG ou PNG brute, 8 Mo maximum, `Content-Type: image/jpeg` ou `image/png`) |
 | `GET/DELETE /posts/:id/photo/meta`, `GET/DELETE /posts/:id/photo/linkedin` | Lit ou retire la photo (`meta` = Instagram + Facebook) |
 | `GET /export.xlsx` | Export Excel : `statuts` (`valide,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
