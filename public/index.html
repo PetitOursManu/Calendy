@@ -272,6 +272,7 @@ fieldset{border:0;display:grid;gap:8px}
 .ph-fig{margin:0;width:210px}
 .ph-fig img{display:block;width:100%;max-height:220px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#EEF1EF}
 .ph-fig figcaption{margin-top:4px;font-size:13px;color:var(--mute)}
+.ph-fig .btn{margin-top:6px}
 .chip .ph-ico{display:inline-flex;align-items:center}
 .chip .ph-ico .ic{margin-top:0;font-size:12px}
 @media (max-width:640px){.ph-grid{grid-template-columns:1fr}}
@@ -533,8 +534,33 @@ function hydratePhotos(root = document) {
 
 function photosHtml(p) {
   const figs = Object.keys(SLOTS).filter((s) => p.photos && p.photos[s]).map((s) =>
-    `<figure class="ph-fig"><img data-photo="${esc(p.id)}" data-slot="${s}" alt="Photo prévue pour ${esc(listeFr(SLOTS[s].reseaux))} : ${esc(p.titre)}"><figcaption>Photo ${esc(SLOTS[s].titre)}</figcaption></figure>`);
+    `<figure class="ph-fig"><img data-photo="${esc(p.id)}" data-slot="${s}" alt="Photo prévue pour ${esc(listeFr(SLOTS[s].reseaux))} : ${esc(p.titre)}"><figcaption>Photo ${esc(SLOTS[s].titre)}</figcaption>${boutonTelecharger(p.id, s)}</figure>`);
   return figs.length ? `<div class="ph-row">${figs.join('')}</div>` : '';
+}
+
+const boutonTelecharger = (id, slot, hidden = false) =>
+  `<button type="button" class="btn small" data-action="photo-download" data-id="${esc(id)}" data-slot="${slot}" aria-label="Télécharger la photo ${esc(SLOTS[slot].titre)}"${hidden ? ' hidden' : ''}>${icon('i-down')}Télécharger</button>`;
+
+/** Nom de fichier lisible pour une photo téléchargée : 2026-11-23_titre-du-post_instagram-facebook.jpg */
+function nomFichierPhoto(p, slot) {
+  const slug = String(p.titre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'post';
+  const ext = p.photos[slot].type === 'image/png' ? 'png' : 'jpg';
+  return `${p.datePublication}_${slug}_${slot === 'meta' ? 'instagram-facebook' : 'linkedin'}.${ext}`;
+}
+
+/** Enregistre sur l'appareil la photo jointe à un post, telle qu'elle est stockée dans Calendy (pas besoin de repasser par Canva). */
+async function downloadPhoto(id, slot) {
+  const p = postById(id);
+  if (!p || !p.photos || !p.photos[slot]) throw new Error('Ce post n’a pas de photo pour ce réseau.');
+  const url = await photoUrl(p, slot);
+  if (!url) throw new Error('La photo n’a pas pu être récupérée sur le serveur.');
+  const name = nomFichierPhoto(p, slot);
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  toast(`${name} téléchargée.`);
 }
 
 /** Réduit la photo à 1600 px maximum et l'enregistre en JPEG : envoi rapide, fichier Excel raisonnable, rotation du téléphone appliquée. */
@@ -567,6 +593,7 @@ function photoSlotHtml(p, slot) {
       <div class="ph-box" data-box>${has ? `<img data-photo="${esc(p.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(s.titre)}">` : '<span>Aucune photo</span>'}</div>
       <div class="ph-actions">
         <button type="button" class="btn small" data-action="photo-pick" data-slot="${slot}">${icon('i-photo')}<span data-pick-label>${has ? 'Changer' : 'Ajouter'}</span></button>
+        ${boutonTelecharger(p.id, slot, !has)}
         <button type="button" class="btn small danger" data-action="photo-remove" data-slot="${slot}"${has ? '' : ' hidden'}>Retirer</button>
       </div>
       <input type="file" accept="image/*" data-photo-input="${slot}" hidden>
@@ -586,6 +613,8 @@ function photoSlotRefresh(form, slot) {
   else box.innerHTML = '<span>Aucune photo</span>';
   el.querySelector('[data-pick-label]').textContent = st.blob || had ? 'Changer' : 'Ajouter';
   el.querySelector('[data-action=photo-remove]').hidden = !(st.blob || had);
+  // Seule la photo déjà enregistrée se télécharge (une photo qui vient d'être choisie est déjà sur l'appareil).
+  el.querySelector('[data-action=photo-download]').hidden = !had || Boolean(st.blob);
 }
 
 function photoSlotsSync(form) {
@@ -1498,6 +1527,7 @@ document.addEventListener('click', (e) => {
     case 'set-statut': guard(() => setStatut(d.id, d.statut)); break;
     case 'photo-pick': t.closest('.ph-slot').querySelector('input[type=file]').click(); break;
     case 'photo-remove': photoRemoved(t.closest('form'), d.slot); break;
+    case 'photo-download': guard(() => downloadPhoto(d.id, d.slot)); break;
     case 'open-export': openExport(); break;
     case 'move-post': openDeplacer(d.id); break;
     case 'clone-post': openCloner(d.id); break;

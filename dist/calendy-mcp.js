@@ -43557,7 +43557,7 @@ Tu proposes des id\xE9es de posts ; c'est l'utilisateur qui d\xE9cide lesquels s
 - Cr\xE9e toujours les posts avec le statut \xAB idee \xBB (c'est le d\xE9faut). Ne passe un post \xE0 \xAB valide \xBB ou \xAB refuse \xBB que si l'utilisateur le demande explicitement.
 - description = l\xE9gende pr\xEAte \xE0 publier, sans hashtags ; hashtags \xE0 part ; imageIdee = description de la photo \xE0 pr\xE9voir.
 - D\xE9placer (deplacer_post), cloner (cloner_post) et fusionner (fusionner_posts) des posts : seulement sur demande de l'utilisateur. Une copie est toujours \xAB idee \xBB. Avant de fusionner deux posts qui diff\xE8rent, montre-lui les deux textes et demande lequel garder : le post \xE9cart\xE9 est supprim\xE9.
-- Photos : facultatives, une par visuel (Instagram + Facebook partagent la m\xEAme, LinkedIn a la sienne). Tu ne cr\xE9es pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur.
+- Photos : facultatives, une par visuel (Instagram + Facebook partagent la m\xEAme, LinkedIn a la sienne). Tu ne cr\xE9es pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur. telecharger_photo enregistre sur cet ordinateur les photos d\xE9j\xE0 jointes \xE0 un post.
 - Sujets sensibles (sant\xE9 mentale, handicap psychique) : message centr\xE9 sur le travail et la fiert\xE9 collective, jamais de diagnostic ni de personne identifiable, et mets un point de vigilance qui demande une validation avant publication. Ne nomme pas une entreprise partenaire sans son accord.`;
 var server = new McpServer({ name: "calendy", version: "1.0.0" }, { instructions: INSTRUCTIONS });
 var lecture = { readOnlyHint: true, openWorldHint: false };
@@ -43755,6 +43755,41 @@ server.registerTool(
   safe(async ({ id, visuel }) => {
     const post = await call("DELETE", `/api/posts/${encodeURIComponent(id)}/photo/${VISUELS[visuel]}`);
     return ok({ id: post.id, titre: post.titre, photos: post.photos });
+  })
+);
+function nomFichierPhoto(post, slot) {
+  const slug = String(post.titre || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60).replace(/^-+|-+$/g, "") || "post";
+  const ext = post.photos[slot].type === "image/png" ? "png" : "jpg";
+  return `${post.datePublication}_${slug}_${slot === "meta" ? "instagram-facebook" : "linkedin"}.${ext}`;
+}
+server.registerTool(
+  "telecharger_photo",
+  {
+    title: "T\xE9l\xE9charger les photos d\u2019un post",
+    description: "Enregistre sur cet ordinateur la ou les photos jointes \xE0 un post (Instagram + Facebook, LinkedIn), telles qu'elles sont stock\xE9es dans Calendy. Sans visuel pr\xE9cis\xE9, toutes les photos du post sont enregistr\xE9es. Renvoie le chemin des fichiers.",
+    inputSchema: {
+      id: z.string().describe("Identifiant du post."),
+      visuel: visuelSchema.optional(),
+      dossier: z.string().optional().describe("Dossier de destination. Par d\xE9faut : le dossier T\xE9l\xE9chargements.")
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false }
+  },
+  safe(async ({ id, visuel, dossier }) => {
+    const post = await call("GET", `/api/posts/${encodeURIComponent(id)}`);
+    const slots = (visuel ? [VISUELS[visuel]] : Object.values(VISUELS)).filter((s) => post.photos && post.photos[s]);
+    if (!slots.length) throw new Error(visuel ? `Ce post n'a pas de photo pour le visuel ${visuel}.` : "Ce post n'a aucune photo jointe.");
+    const dir = path.resolve(dossier || process.env.CALENDY_EXPORT_DIR || path.join(os.homedir(), "Downloads"));
+    fs.mkdirSync(dir, { recursive: true });
+    const fichiers = [];
+    for (const slot of slots) {
+      const res = await call("GET", `/api/posts/${encodeURIComponent(id)}/photo/${slot}`, void 0, { raw: true });
+      const nom = nomFichierPhoto(post, slot);
+      let cible = path.join(dir, nom);
+      for (let i = 2; fs.existsSync(cible); i += 1) cible = path.join(dir, nom.replace(/(\.\w+)$/, `_${i}$1`));
+      fs.writeFileSync(cible, Buffer.from(await res.arrayBuffer()));
+      fichiers.push(cible);
+    }
+    return ok({ id: post.id, titre: post.titre, fichiers });
   })
 );
 server.registerTool(

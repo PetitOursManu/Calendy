@@ -58,7 +58,7 @@ test('le connecteur annonce ses outils et ses consignes', async () => {
   assert.deepEqual(noms, [
     'ajouter_photo', 'apercu', 'changer_statut', 'cloner_post', 'creer_evenement', 'creer_post', 'deplacer_post', 'exporter_excel',
     'fusionner_posts', 'lire_post', 'lister_evenements', 'lister_posts', 'modifier_evenement', 'modifier_post', 'retirer_photo',
-    'supprimer_evenement', 'supprimer_post',
+    'supprimer_evenement', 'supprimer_post', 'telecharger_photo',
   ]);
   assert.ok(tools.every((t) => t.description && t.description.length > 30), 'chaque outil est décrit');
   assert.equal(tools.find((t) => t.name === 'supprimer_post').annotations.destructiveHint, true);
@@ -177,6 +177,16 @@ test('ajouter_photo et retirer_photo : une photo par visuel, à partir d’un fi
   const faux = path.join(exportDir, 'faux.png');
   fs.writeFileSync(faux, 'ceci n’est pas une image');
   assert.equal((await appel('ajouter_photo', { id: post.id, visuel: 'linkedin', chemin: faux })).isError, true, 'contenu invalide refusé par le serveur');
+
+  const telecharge = donnees(await appel('telecharger_photo', { id: post.id }));
+  assert.equal(telecharge.fichiers.length, 1, 'seule la photo jointe est enregistrée');
+  assert.equal(path.basename(telecharge.fichiers[0]), '2026-11-12_post-mcp-photo_instagram-facebook.jpg');
+  assert.deepEqual(fs.readFileSync(telecharge.fichiers[0]), fs.readFileSync(jpg), 'fichier identique à la photo jointe');
+  const encore = donnees(await appel('telecharger_photo', { id: post.id, visuel: 'instagram_facebook' }));
+  assert.notEqual(encore.fichiers[0], telecharge.fichiers[0], 'un second téléchargement n’écrase pas le premier');
+  const sansPhoto = await appel('telecharger_photo', { id: post.id, visuel: 'linkedin' });
+  assert.equal(sansPhoto.isError, true);
+  assert.match(texte(sansPhoto), /pas de photo/);
 
   const retire = donnees(await appel('retirer_photo', { id: post.id, visuel: 'instagram_facebook' }));
   assert.equal(retire.photos.meta, null);
