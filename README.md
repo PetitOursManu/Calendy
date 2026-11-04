@@ -31,7 +31,16 @@ Les données sont dans `data/data.json`, avec une copie `data.json.bak` à chaqu
 | À valider | Les idées en attente, un mois à la fois : des boutons en haut de page (Octobre 2026, Janvier 2027… avec le nombre d'idées) permettent de choisir le mois, ou « Tous les mois » pour tout voir. Un bouton **Liste / Calendrier** permet d'afficher les idées du mois choisi sur une grille de calendrier (avec les événements en bandes) ; un clic sur une idée l'ouvre pour la modifier, la valider ou la refuser. Sur téléphone, la grille est remplacée par un agenda jour par jour, avec la légende, les hashtags, l'idée d'image, l'explication de l'événement et le point de vigilance. Valider ou Refuser en un clic, avec un bouton Annuler. |
 | Événements | Les temps forts, en liste rangée par mois (repliable) ou en **vue Calendrier** (bouton Liste / Calendrier, navigation de mois en mois, un clic sur une barre ouvre l'événement, le + d'un jour crée un événement à cette date), avec leur explication et leur lien avec Elisa30. Un badge signale ceux qui n'ont encore aucun post. |
 
-Chaque post contient : titre, légende, hashtags, idée d'image, date et heure de publication, réseaux (Instagram, Facebook, LinkedIn), événement lié, atelier, angle, point de vigilance et statut (idée à valider, validé, refusé, publié). Une **photo facultative** peut être jointe à chaque post : une pour Instagram + Facebook (la même sur les deux), une pour LinkedIn. Elle s'ajoute dans le formulaire du post (le bouton n'apparaît que pour les réseaux cochés), s'affiche dans « À valider » et se retire d'un clic. Un bouton **Télécharger** (sous la photo dans « À valider », et dans la fiche du post) enregistre la photo sur l'ordinateur ou le téléphone, sans repasser par Canva ; le fichier porte un nom clair, par exemple `2026-11-23_portes-ouvertes_instagram-facebook.jpg`. Les photos sont réduites à 1 600 px et enregistrées en JPEG par le navigateur avant l'envoi. La légende est comptée avec les hashtags, et l'appli prévient quand elle dépasse la limite d'Instagram (2 200 caractères) ou de LinkedIn (3 000).
+Chaque post contient : titre, légende, hashtags, idée d'image, date et heure de publication, réseaux (Instagram, Facebook, LinkedIn), événement lié, atelier, angle, point de vigilance et statut (idée à valider, validé, planifié, refusé, publié). Une **photo facultative** peut être jointe à chaque post : une pour Instagram + Facebook (la même sur les deux), une pour LinkedIn. Elle s'ajoute dans le formulaire du post (le bouton n'apparaît que pour les réseaux cochés), s'affiche dans « À valider » et se retire d'un clic. Un bouton **Télécharger** (sous la photo dans « À valider », et dans la fiche du post) enregistre la photo sur l'ordinateur ou le téléphone, sans repasser par Canva ; le fichier porte un nom clair, par exemple `2026-11-23_portes-ouvertes_instagram-facebook.jpg`. Les photos sont réduites à 1 600 px et enregistrées en JPEG par le navigateur avant l'envoi. La légende est comptée avec les hashtags, et l'appli prévient quand elle dépasse la limite d'Instagram (2 200 caractères) ou de LinkedIn (3 000).
+
+### Planifier un post
+
+Dans la fiche d'un post, choisis le statut **Planifié** : le post passe **automatiquement en « Publié »** quand sa date de publication est atteinte, à son heure si elle est renseignée (sans heure, dès le début de la journée). Sous les statuts, l'appli annonce quand le basculement aura lieu.
+
+- Calendy **ne publie rien sur les réseaux** : il met seulement le statut à jour dans le calendrier.
+- Un post dont la date et l'heure sont déjà passées ne peut pas être planifié (l'appli le refuse) : choisis une date à venir, ou « Publié ».
+- Le basculement se fait chaque minute sur le serveur et avant chaque lecture de l'API, même si personne n'a la page ouverte. La page ouverte se met à jour toute seule (toutes les 20 secondes). Les dates et heures sont celles du fuseau `CALENDY_TZ` (Europe/Paris par défaut).
+- Déplacer un post planifié vers une date passée est refusé pour la même raison. Les copies (clonage) repartent en « idée à valider ».
 
 ### Déplacer, cloner et fusionner des posts
 
@@ -43,7 +52,7 @@ Ces trois actions sont dans la fiche d'un post (boutons **Déplacer**, **Cloner*
 
 ### Export Excel
 
-Le bouton **Exporter en Excel** ouvre une fenêtre : statuts à inclure (validés et publiés par défaut), période, et un compteur qui annonce combien de posts seront exportés. Le fichier contient deux feuilles :
+Le bouton **Exporter en Excel** ouvre une fenêtre : statuts à inclure (validés, planifiés et publiés par défaut), période, et un compteur qui annonce combien de posts seront exportés. Le fichier contient deux feuilles :
 
 - **Calendrier éditorial** : un post par ligne, avec ses photos intégrées dans deux colonnes (Instagram + Facebook, LinkedIn) quand il y en a — case « Inclure les photos » dans la fenêtre d'export, à décocher pour un fichier plus léger — avec sa date (vraie date Excel), le jour, la semaine, les réseaux, le titre, la légende, les hashtags, l'idée d'image, l'événement, la date de l'événement, son explication, l'angle, le point de vigilance et le statut en couleur. Filtres et volets figés prêts à l'emploi.
 - **Événements** : les événements concernés, avec « Ce qu'il faut savoir », le lien avec Elisa30 et le nombre de posts prévus.
@@ -110,6 +119,7 @@ Sauvegarde : copie `data.json` **et le dossier `images`** du volume.
 | `HOST` | Adresse d'écoute (`0.0.0.0` dans Docker) | `127.0.0.1` |
 | `DATA_DIR` | Dossier de `data.json` | `./data` |
 | `CALENDY_TOKEN` | Jeton d'accès à l'API (recommandé hors poste local) | aucun |
+| `CALENDY_TZ` | Fuseau horaire des dates et heures des posts, utilisé pour passer les posts « Planifié » en « Publié » à l'échéance | `Europe/Paris` |
 | `CALENDY_NO_SEED` | `1` pour ne pas charger `seed.json` au premier démarrage | non défini |
 
 Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_TOKEN` et `CALENDY_EXPORT_DIR`.
@@ -117,7 +127,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 33 tests : API, photos, clonage, fusion, export Excel, connecteur MCP
+npm test                # 38 tests : API, photos, clonage, fusion, export Excel, connecteur MCP
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -128,13 +138,13 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | --- | --- |
 | `GET /state` | Tout le calendrier (événements et posts) |
 | `GET/POST /posts`, `GET/PUT/DELETE /posts/:id` | Posts (déplacer = `PUT` avec `datePublication`). Filtres de liste : `statut`, `du`, `au`, `q`, `eventId` |
-| `POST /posts/statut` | Change le statut de plusieurs posts : `{ "ids": [...], "statut": "valide" }` |
+| `POST /posts/statut` | Change le statut de plusieurs posts : `{ "ids": [...], "statut": "valide" }`. Le statut `planifie` est refusé (400) pour un post dont la date et l'heure sont déjà passées ; un post `planifie` passe seul en `publie` à son échéance |
 | `GET/POST /evenements`, `GET/PUT/DELETE /evenements/:id` | Événements (supprimer un événement détache ses posts, sans les supprimer) |
 | `POST /posts/:id/cloner` | Copies d'un post : `{ "dates": ["2026-11-03", "2026-11-10"] }`. Une copie « idée à valider » par date (doublons ignorés, 60 maximum), photos copiées. Répond `201 { "clones": [...] }` |
 | `POST /posts/fusionner` | Fusionne deux posts sans réseau en commun : `{ "ids": [a, b], "garder": a, "choix": { "description": b, "photo": b } }`. `garder` (le premier par défaut) conserve son identifiant ; l'autre est supprimé. Sans `choix` pour un champ, on prend la valeur du post gardé (ou de l'autre si le premier n'a rien) ; `choix.photo` peut valoir `"aucune"`. Statuts différents sans choix : `idee`. Répond `{ "post": {...}, "supprime": id }` |
 | `PUT /posts/:id/photo/meta`, `PUT /posts/:id/photo/linkedin` | Joint une photo (corps = image JPEG ou PNG brute, 8 Mo maximum, `Content-Type: image/jpeg` ou `image/png`) |
 | `GET/DELETE /posts/:id/photo/meta`, `GET/DELETE /posts/:id/photo/linkedin` | Lit ou retire la photo (`meta` = Instagram + Facebook) |
-| `GET /export.xlsx` | Export Excel : `statuts` (`valide,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
+| `GET /export.xlsx` | Export Excel : `statuts` (`valide,planifie,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
 | `GET /health` | Contrôle de santé, sans jeton |
 
 Le serveur refuse les requêtes dont l'en-tête `Origin` n'est pas son propre hôte, et celles dont le `Content-Type` n'est pas `application/json`, ce qui bloque les appels d'un autre site depuis le navigateur. La page est servie avec une politique de sécurité qui n'autorise aucune ressource externe.

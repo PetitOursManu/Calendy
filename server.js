@@ -12,6 +12,8 @@
  *   HOST           adresse d'écoute (défaut 127.0.0.1 ; 0.0.0.0 dans Docker)
  *   DATA_DIR       dossier de stockage (défaut ./data)
  *   CALENDY_TOKEN  jeton d'accès à l'API (optionnel mais recommandé hors poste local)
+ *   CALENDY_TZ     fuseau horaire des dates et heures des posts (défaut Europe/Paris) ; sert à passer
+ *                  automatiquement les posts « Planifié » en « Publié » à leur échéance
  *   CALENDY_NO_SEED=1  ne pas charger seed.json au premier démarrage
  *
  * Les photos des posts sont rangées dans DATA_DIR/images (à sauvegarder avec data.json).
@@ -45,14 +47,30 @@ const TOKEN_BRUT = process.env.CALENDY_TOKEN || '';
 const TOKEN = nettoyerJeton(TOKEN_BRUT);
 const INDEX_FILE = path.join(__dirname, 'public', 'index.html');
 
-const STATUTS = ['idee', 'valide', 'refuse', 'publie'];
+const STATUTS = ['idee', 'valide', 'planifie', 'refuse', 'publie'];
 const STATUT_LIBELLES = {
   idee: 'Idée à valider',
   valide: 'Validé',
+  planifie: 'Planifié',
   refuse: 'Refusé',
   publie: 'Publié',
 };
 const PLATEFORMES = ['Instagram', 'Facebook', 'LinkedIn'];
+
+/**
+ * Fuseau horaire des dates et heures des posts (le serveur Docker tourne en UTC, l'ESAT est en France).
+ * Sert à savoir quand un post « Planifié » arrive à échéance. Modifiable avec CALENDY_TZ.
+ */
+const FUSEAU = (() => {
+  const voulu = process.env.CALENDY_TZ || 'Europe/Paris';
+  try {
+    new Intl.DateTimeFormat('fr-FR', { timeZone: voulu });
+    return voulu;
+  } catch {
+    console.warn(`CALENDY_TZ « ${voulu} » n'est pas un fuseau horaire valide : Europe/Paris utilisé à la place.`);
+    return 'Europe/Paris';
+  }
+})();
 
 /* ------------------------------------------------------------------ */
 /* Erreurs et validation                                              */
@@ -292,6 +310,48 @@ function cleanEvent(input, current = null) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Planification : un post « Planifié » passe en « Publié » à l'échéance */
+/* ------------------------------------------------------------------ */
+
+/** Date (AAAA-MM-JJ) et heure (HH:MM) qu'il est, dans le fuseau de l'ESAT. */
+function instantLocal(now = new Date()) {
+  const parties = new Intl.DateTimeFormat('en-GB', {
+    timeZone: FUSEAU, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now);
+  const v = (type) => parties.find((p) => p.type === type).value;
+  return { jour: `${v('year')}-${v('month')}-${v('day')}`, heure: `${v('hour')}:${v('minute')}` };
+}
+
+/**
+ * L'échéance d'un post est sa date de publication, à son heure si elle est renseignée.
+ * Sans heure, elle tombe dès le début du jour prévu.
+ */
+function echeanceAtteinte(post, now = new Date()) {
+  const { jour, heure } = instantLocal(now);
+  if (post.datePublication !== jour) return post.datePublication < jour;
+  return !post.heure || post.heure <= heure;
+}
+
+const messageEcheancePassee = (titres) =>
+  `Planification impossible : la date et l’heure de ${titres.map((t) => `« ${t} »`).join(', ')} sont déjà passées. Choisis une date à venir, ou le statut « Publié ».`;
+
+/** Passe en « Publié » les posts « Planifié » arrivés à échéance. Renvoie le nombre de posts basculés. */
+function publierPostsEchus(now = new Date()) {
+  const echus = db.posts.filter((p) => p.statut === 'planifie' && echeanceAtteinte(p, now));
+  if (!echus.length) return 0;
+  echus.forEach((p) => { p.statut = 'publie'; });
+  try {
+    saveDb();
+  } catch (err) {
+    echus.forEach((p) => { p.statut = 'planifie'; }); // la mémoire reste fidèle au fichier ; on réessaiera
+    console.error('Publication automatique impossible (écriture du fichier de données) :', err.message);
+    return 0;
+  }
+  console.log(`Publication automatique : ${echus.length} post(s) passé(s) en « Publié » (${echus.map((p) => p.id).join(', ')}).`);
+  return echus.length;
+}
+
+/* ------------------------------------------------------------------ */
 /* Posts                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -329,6 +389,8 @@ function cleanPost(input, current = null) {
     if (id && !db.evenements.some((e) => e.id === id)) throw new HttpError(400, `Événement introuvable : ${id}`);
     out.eventId = id;
   }
+  // Un post déjà arrivé à échéance serait publié aussitôt : on le refuse plutôt que de changer le statut en silence.
+  if (out.statut === 'planifie' && echeanceAtteinte(out)) throw new HttpError(400, messageEcheancePassee([out.titre]));
   return out;
 }
 
@@ -547,6 +609,7 @@ const FONT = { name: 'Calibri', size: 11 };
 const STATUT_COULEURS = {
   idee: 'FFFFF1C2',
   valide: 'FFD5EFD7',
+  planifie: 'FFE3DDF4',
   refuse: 'FFF6D3D3',
   publie: 'FFD3E3F6',
 };
@@ -773,6 +836,10 @@ route('POST', /^\/api\/posts\/statut$/, ({ body }) => {
   const trouves = db.posts.filter((p) => body.ids.includes(p.id));
   const inconnus = body.ids.filter((id) => !trouves.some((p) => p.id === id));
   if (inconnus.length) throw new HttpError(404, `Posts introuvables : ${inconnus.join(', ')}`);
+  if (nouveau === 'planifie') {
+    const echus = trouves.filter((p) => echeanceAtteinte(p));
+    if (echus.length) throw new HttpError(400, messageEcheancePassee(echus.map((p) => p.titre)));
+  }
   trouves.forEach((p) => {
     p.statut = nouveau;
   });
@@ -836,9 +903,9 @@ route('DELETE', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/, ({ params })
   return post;
 });
 
-/* Export Excel : ?statuts=valide,publie (défaut) | all  &du=AAAA-MM-JJ &au=AAAA-MM-JJ  &photos=0 (sans les photos) */
+/* Export Excel : ?statuts=valide,planifie,publie (défaut) | all  &du=AAAA-MM-JJ &au=AAAA-MM-JJ  &photos=0 (sans les photos) */
 route('GET', /^\/api\/export\.xlsx$/, async ({ query }) => {
-  const statuts = !query.statuts ? ['valide', 'publie'] : query.statuts === 'all' ? STATUTS : query.statuts.split(',');
+  const statuts = !query.statuts ? ['valide', 'planifie', 'publie'] : query.statuts === 'all' ? STATUTS : query.statuts.split(',');
   const posts = filterPosts({ statut: statuts.join(','), du: query.du, au: query.au });
   const buffer = await buildWorkbook(posts, { photos: query.photos !== '0' });
   const stamp = new Date().toISOString().slice(0, 10);
@@ -950,6 +1017,9 @@ async function handle(req, res) {
     return send(res, 401, { error: 'Jeton d’accès manquant ou invalide.' }, SECURITY_HEADERS);
   }
 
+  // Les posts « Planifié » arrivés à échéance passent en « Publié » avant toute lecture ou écriture : on ne voit jamais un état périmé.
+  if (pathname !== '/api/health') publierPostsEchus();
+
   // Envoi d'une photo : le corps est l'image elle-même (pas du JSON).
   const mPhoto = req.method === 'PUT' && pathname.match(/^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/);
   if (mPhoto) return send(res, 200, await enregistrerPhoto(req, mPhoto[1], mPhoto[2]), SECURITY_HEADERS);
@@ -1002,6 +1072,9 @@ const server = http.createServer((req, res) => {
 
 if (require.main === module) {
   loadDb();
+  publierPostsEchus();
+  // Même sans visite, le fichier de données est tenu à jour : on vérifie les échéances chaque minute.
+  setInterval(() => publierPostsEchus(), 60_000).unref();
   server.listen(PORT, HOST, () => {
     console.log(`Calendy prêt sur http://${HOST}:${PORT}  (données : ${DATA_FILE})`);
     if (!TOKEN) {
@@ -1016,4 +1089,4 @@ if (require.main === module) {
   process.on('SIGINT', stop);
 }
 
-module.exports = { semaineLabel, periodeFr, nettoyerJeton };
+module.exports = { semaineLabel, periodeFr, nettoyerJeton, echeanceAtteinte };

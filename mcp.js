@@ -82,7 +82,7 @@ const safe = (fn) => async (args) => {
 /* Schémas                                                            */
 /* ------------------------------------------------------------------ */
 
-const STATUTS = ['idee', 'valide', 'refuse', 'publie'];
+const STATUTS = ['idee', 'valide', 'planifie', 'refuse', 'publie'];
 const RESEAUX = ['Instagram', 'Facebook', 'LinkedIn'];
 const dateSchema = (label) => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'format AAAA-MM-JJ').describe(label);
 
@@ -108,7 +108,8 @@ const INSTRUCTIONS = `Calendy est le calendrier éditorial des réseaux sociaux 
 Tu proposes des idées de posts ; c'est l'utilisateur qui décide lesquels sont retenus.
 - Commence par apercu pour voir l'état du calendrier, puis lister_evenements avant d'en créer un (évite les doublons).
 - Rattache chaque post à son événement (eventId) quand il y en a un ; sinon laisse vide (contenu « coulisses »).
-- Crée toujours les posts avec le statut « idee » (c'est le défaut). Ne passe un post à « valide » ou « refuse » que si l'utilisateur le demande explicitement.
+- Crée toujours les posts avec le statut « idee » (c'est le défaut). Ne passe un post à « valide », « planifie » ou « refuse » que si l'utilisateur le demande explicitement.
+- Planifier : le statut « planifie » signifie validé et programmé. Calendy passe lui-même le post en « publie » dès que sa date (et son heure, si elle est renseignée) est atteinte ; sans heure, dès le matin du jour prévu. Calendy ne publie rien sur les réseaux, il met seulement le statut à jour. Un post dont la date est déjà passée ne peut pas être planifié : propose-lui « publie » ou une nouvelle date (deplacer_post).
 - description = légende prête à publier, sans hashtags ; hashtags à part ; imageIdee = description de la photo à prévoir.
 - Déplacer (deplacer_post), cloner (cloner_post) et fusionner (fusionner_posts) des posts : seulement sur demande de l'utilisateur. Une copie est toujours « idee ». Avant de fusionner deux posts qui diffèrent, montre-lui les deux textes et demande lequel garder : le post écarté est supprimé.
 - Photos : facultatives, une par visuel (Instagram + Facebook partagent la même, LinkedIn a la sienne). Tu ne crées pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur. telecharger_photo enregistre sur cet ordinateur les photos déjà jointes à un post.
@@ -137,7 +138,7 @@ server.registerTool(
   {
     title: 'Aperçu du calendrier',
     description:
-      "État général du calendrier : nombre de posts par statut, posts en attente de validation, prochains posts validés, événements à venir qui n'ont encore aucun post. À appeler en premier.",
+      "État général du calendrier : nombre de posts par statut, posts en attente de validation, prochains posts validés ou planifiés, événements à venir qui n'ont encore aucun post. À appeler en premier.",
     inputSchema: {},
     annotations: lecture,
   },
@@ -151,7 +152,7 @@ server.registerTool(
       parStatut,
       aValider: posts.filter((p) => p.statut === 'idee').map((p) => resumePost(p, evenements)),
       prochainsPostsValides: posts
-        .filter((p) => p.statut === 'valide' && p.datePublication >= today)
+        .filter((p) => (p.statut === 'valide' || p.statut === 'planifie') && p.datePublication >= today)
         .slice(0, 8)
         .map((p) => resumePost(p, evenements)),
       evenementsAVenirSansPost: evenements
@@ -168,7 +169,7 @@ server.registerTool(
     description:
       'Liste les posts du calendrier, triés par date. Filtres facultatifs : statuts, période, mot à chercher. Renvoie un résumé par post ; utilise lire_post pour le texte complet.',
     inputSchema: {
-      statuts: z.array(z.enum(STATUTS)).optional().describe('idee = à valider, valide, refuse, publie. Par défaut : tous.'),
+      statuts: z.array(z.enum(STATUTS)).optional().describe('idee = à valider, valide, planifie, refuse, publie. Par défaut : tous.'),
       du: dateSchema('Date de publication minimale (incluse).').optional(),
       au: dateSchema('Date de publication maximale (incluse).').optional(),
       recherche: z.string().optional().describe('Mot ou expression à chercher dans les textes du post.'),
@@ -386,10 +387,10 @@ server.registerTool(
   {
     title: 'Changer le statut de posts',
     description:
-      "Valide, refuse, publie ou remet « à valider » un ou plusieurs posts. À n'utiliser que sur demande explicite de l'utilisateur (« valide celui-ci », « refuse les deux Halloween »…).",
+      "Valide, planifie, refuse, publie ou remet « à valider » un ou plusieurs posts. « planifie » : le post passera tout seul en « publie » à sa date et son heure (refusé si elles sont déjà passées). À n'utiliser que sur demande explicite de l'utilisateur (« valide celui-ci », « planifie le post de jeudi », « refuse les deux Halloween »…).",
     inputSchema: {
       ids: z.array(z.string()).min(1).describe('Identifiants des posts.'),
-      statut: z.enum(STATUTS).describe('idee = à valider, valide, refuse, publie.'),
+      statut: z.enum(STATUTS).describe('idee = à valider, valide, planifie (passe seul en publie à échéance), refuse, publie.'),
     },
     annotations: { ...ecriture, idempotentHint: true },
   },
@@ -471,9 +472,9 @@ server.registerTool(
   {
     title: 'Exporter en Excel',
     description:
-      "Génère le fichier Excel du calendrier (feuilles « Calendrier éditorial » et « Événements ») et l'enregistre sur cet ordinateur. Par défaut, seuls les posts validés ou publiés sont exportés. Renvoie le chemin du fichier.",
+      "Génère le fichier Excel du calendrier (feuilles « Calendrier éditorial » et « Événements ») et l'enregistre sur cet ordinateur. Par défaut, seuls les posts validés, planifiés ou publiés sont exportés. Renvoie le chemin du fichier.",
     inputSchema: {
-      statuts: z.array(z.enum(STATUTS)).optional().describe('Statuts à inclure. Par défaut : valide et publie.'),
+      statuts: z.array(z.enum(STATUTS)).optional().describe('Statuts à inclure. Par défaut : valide, planifie et publie.'),
       du: dateSchema('Date de publication minimale (incluse).').optional(),
       au: dateSchema('Date de publication maximale (incluse).').optional(),
       avecPhotos: z.boolean().optional().describe('Inclure les photos des posts dans le fichier. Par défaut : oui (fichier plus lourd).'),

@@ -21,6 +21,7 @@
   --denim:#2A4A7F; --denim-ink:#1B3562; --denim-wash:#D6E1F1; --denim-pale:#EAF0F8;
   --idee:#7F520A; --idee-bg:#FBF0D6; --idee-line:#C58A1A;
   --valide:#1B6444; --valide-bg:#DCF1E4; --valide-line:#2E8D62;
+  --planifie:#4B3F8F; --planifie-bg:#E9E5F6; --planifie-line:#8575C9;
   --refuse:#942A22; --refuse-bg:#F9E1DE; --refuse-line:#C4483E;
   --publie:#42535B; --publie-bg:#E3E8EA; --publie-line:#778990;
 }
@@ -92,6 +93,8 @@ button{cursor:pointer}
 .s-idee .ic{color:var(--idee)}
 .s-valide{background:var(--valide-bg);border-color:var(--valide-line)}
 .s-valide .ic{color:var(--valide)}
+.s-planifie{background:var(--planifie-bg);border-color:var(--planifie-line)}
+.s-planifie .ic{color:var(--planifie)}
 .s-refuse{background:var(--refuse-bg);border-color:var(--refuse-line)}
 .s-refuse .ic{color:var(--refuse)}
 .s-refuse .ttl{text-decoration:line-through;text-decoration-thickness:1.5px}
@@ -232,12 +235,15 @@ fieldset{border:0;display:grid;gap:8px}
 .opt input:focus-visible+span{outline:3px solid var(--denim);outline-offset:2px}
 .opt.st-idee input:checked+span{background:var(--idee-bg);border:1.5px dashed var(--idee-line);color:var(--idee)}
 .opt.st-valide input:checked+span{background:var(--valide-bg);border-color:var(--valide-line);color:var(--valide)}
+.opt.st-planifie input:checked+span{background:var(--planifie-bg);border-color:var(--planifie-line);color:var(--planifie)}
 .opt.st-refuse input:checked+span{background:var(--refuse-bg);border-color:var(--refuse-line);color:var(--refuse)}
 .opt.st-publie input:checked+span{background:var(--publie-bg);border-color:var(--publie-line);color:var(--publie)}
 .count{font-size:13.5px;color:var(--mute)}
 .count.over{color:var(--refuse);font-weight:700}
 .evinfo{margin-top:2px}
 .hint{font-size:13.5px;color:var(--mute)}
+.hint.over{color:var(--refuse);font-weight:700}
+.pills+.hint{margin-top:8px}
 .form-error{padding:9px 12px;border-radius:8px;background:var(--refuse-bg);color:var(--refuse);font-weight:700}
 .export-count{padding:10px 12px;background:var(--denim-pale);border-radius:8px;font-weight:700}
 .sub-dates{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:6px 0 0 26px}
@@ -327,6 +333,7 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
   <symbol id="i-sent" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-3-7z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/></symbol>
   <symbol id="i-warn" viewBox="0 0 24 24"><path d="M12 4l9 16H3zM12 10v4M12 17v.4"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
@@ -377,9 +384,9 @@ const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 
 const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const JOURS = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 const JOURS_COURTS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
-const STATUTS = { idee: 'Idée à valider', valide: 'Validé', refuse: 'Refusé', publie: 'Publié' };
-const ORDRE = ['idee', 'valide', 'refuse', 'publie'];
-const ICONES = { idee: 'i-idea', valide: 'i-check', refuse: 'i-x', publie: 'i-sent' };
+const STATUTS = { idee: 'Idée à valider', valide: 'Validé', planifie: 'Planifié', refuse: 'Refusé', publie: 'Publié' };
+const ORDRE = ['idee', 'valide', 'planifie', 'refuse', 'publie'];
+const ICONES = { idee: 'i-idea', valide: 'i-check', planifie: 'i-clock', refuse: 'i-x', publie: 'i-sent' };
 const RESEAUX = ['Instagram', 'Facebook', 'LinkedIn'];
 const LOGOS = {
   LinkedIn: 'data:image/png;base64,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',
@@ -962,7 +969,7 @@ function postForm(p, isNew) {
         <label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>
         <label class="f"><span>Angle du post</span><textarea name="angle" rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>
         <label class="f"><span>Point de vigilance</span><textarea name="vigilance" rows="2" maxlength="2000">${esc(p.vigilance)}</textarea></label>
-        <fieldset><legend>Statut</legend><div class="pills">${sts}</div></fieldset>
+        <fieldset><legend>Statut</legend><div class="pills">${sts}</div><p class="hint" id="planifHint" aria-live="polite"></p></fieldset>
       </div>
       <footer class="dr-foot">
         ${isNew ? '' : '<button type="button" class="btn danger" data-action="delete-arm">Supprimer</button>'}
@@ -970,6 +977,31 @@ function postForm(p, isNew) {
         <button type="button" class="btn" data-action="close-dialog">Annuler</button>
         <button type="submit" class="btn primary">Enregistrer</button>
       </footer></form>`;
+}
+
+/** Sous le statut : explique la planification et prévient si la date choisie est déjà passée. */
+function updatePlanifHint(form) {
+  const el = form.querySelector('#planifHint');
+  if (!el) return;
+  const statut = form.elements.statut.value;
+  const date = form.elements.datePublication.value;
+  const heure = form.elements.heure.value;
+  el.className = 'hint';
+  if (statut !== 'planifie') {
+    el.textContent = 'Choisis « Planifié » pour que le post passe tout seul en « Publié » à la date et à l’heure prévues.';
+    return;
+  }
+  if (!date) { el.textContent = 'Choisis d’abord une date de publication.'; return; }
+  const maintenant = new Date();
+  const hm = `${pad(maintenant.getHours())}:${pad(maintenant.getMinutes())}`;
+  const aujourdhui = todayIso();
+  const passe = date < aujourdhui || (date === aujourdhui && (!heure || heure <= hm));
+  if (passe) {
+    el.className = 'hint over';
+    el.textContent = 'Cette date et cette heure sont déjà passées : choisis une date à venir, ou le statut « Publié ».';
+    return;
+  }
+  el.textContent = `Le post passera automatiquement en « Publié » le ${dateLongue(date)}${heure ? ` à ${heureFr(heure)}` : ', dès le début de la journée'}. Calendy ne publie rien sur les réseaux : il met seulement le statut à jour.`;
 }
 
 function updateCount(form) {
@@ -993,6 +1025,7 @@ function openPost(id, defaults = {}) {
   $('#drawer')._photos = { meta: { blob: null, url: '', remove: false }, linkedin: { blob: null, url: '', remove: false } };
   const form = $('#drawer form');
   updateCount(form);
+  updatePlanifHint(form);
   hydratePhotos($('#drawer'));
 }
 
@@ -1089,7 +1122,7 @@ async function setStatut(id, statut) {
   const avant = p.statut;
   await api('PUT', `/api/posts/${id}`, { statut });
   await refresh();
-  const verbe = { valide: 'validé', refuse: 'refusé', publie: 'publié', idee: 'remis à valider' }[statut];
+  const verbe = { valide: 'validé', planifie: 'planifié', refuse: 'refusé', publie: 'publié', idee: 'remis à valider' }[statut];
   toast(`« ${p.titre.length > 48 ? `${p.titre.slice(0, 47)}…` : p.titre} » ${verbe}.`, {
     undo: () => guard(async () => { await api('PUT', `/api/posts/${id}`, { statut: avant }); await refresh(); toast('Changement annulé.'); }),
   });
@@ -1120,7 +1153,7 @@ function openExport() {
   const per = (v, label, checked) => `<label class="radio"><input type="radio" name="periode" value="${v}"${checked ? ' checked' : ''}>${label}</label>`;
   dlg.innerHTML = `<form class="modal-form" data-form="export">
     <header class="modal-head"><h2 id="dlgTitle">Exporter en Excel</h2><button type="button" class="icon-btn" data-action="close-dialog" aria-label="Fermer">${icon('i-x')}</button></header>
-    <fieldset><legend>Posts à inclure</legend>${stat('valide', true)}${stat('publie', true)}${stat('idee', false)}${stat('refuse', false)}</fieldset>
+    <fieldset><legend>Posts à inclure</legend>${stat('valide', true)}${stat('planifie', true)}${stat('publie', true)}${stat('idee', false)}${stat('refuse', false)}</fieldset>
     ${state.posts.some(hasPhoto) ? `<fieldset><legend>Photos</legend><label class="radio"><input type="checkbox" name="photos" checked>Inclure les photos dans le fichier (plus lourd)</label></fieldset>` : ''}
     <fieldset><legend>Période</legend>
       ${per('futur', 'À partir d’aujourd’hui', true)}${per('mois', `Mois affiché (${esc(mois)})`, false)}${per('tout', 'Toutes les dates', false)}${per('dates', 'Dates précises', false)}
@@ -1573,7 +1606,7 @@ document.addEventListener('submit', (e) => {
 
 document.addEventListener('input', (e) => {
   const form = e.target.closest('form[data-form=post]');
-  if (form) updateCount(form);
+  if (form) { updateCount(form); updatePlanifHint(form); }
 });
 document.addEventListener('change', (e) => {
   if (e.target.name === 'eventId') $('#evInfo').innerHTML = evInfoHtml(e.target.value);

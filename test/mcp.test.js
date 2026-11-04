@@ -247,3 +247,23 @@ test('serveur injoignable ou jeton erroné : explication utile', async () => {
   assert.match(injoignable.content[0].text, /injoignable/);
   await absent.close();
 });
+
+test('changer_statut : planifier un post à venir, refuser une date passée', async () => {
+  const futur = donnees(await appel('creer_post', { titre: 'MCP à planifier', datePublication: '2099-05-05', heure: '10:00', plateformes: ['Instagram'] }));
+  const planifie = donnees(await appel('changer_statut', { ids: [futur.id], statut: 'planifie' }));
+  assert.equal(planifie.modifies, 1);
+  assert.equal(planifie.statut, 'planifie');
+  assert.equal(donnees(await appel('lire_post', { id: futur.id })).statut, 'planifie');
+  const apercu = donnees(await appel('apercu'));
+  assert.equal(apercu.parStatut.planifie, 1);
+  assert.ok(apercu.prochainsPostsValides.some((p) => p.id === futur.id), 'un post planifié compte parmi les prochains posts');
+
+  const passe = donnees(await appel('creer_post', { titre: 'MCP déjà passé', datePublication: '2020-05-05', plateformes: ['Instagram'] }));
+  const refus = await appel('changer_statut', { ids: [passe.id], statut: 'planifie' });
+  assert.equal(refus.isError, true);
+  assert.match(refus.content[0].text, /déjà passées/);
+  assert.equal(donnees(await appel('lire_post', { id: passe.id })).statut, 'idee');
+
+  await appel('supprimer_post', { id: futur.id });
+  await appel('supprimer_post', { id: passe.id });
+});

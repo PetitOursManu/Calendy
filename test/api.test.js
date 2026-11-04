@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const ExcelJS = require('exceljs');
-const { semaineLabel, periodeFr, nettoyerJeton } = require('../server.js');
+const { semaineLabel, periodeFr, nettoyerJeton, echeanceAtteinte } = require('../server.js');
 
 const TOKEN = 'jeton-de-test-0123456789';
 const PORT = 3900 + Math.floor(Math.random() * 90);
@@ -511,4 +511,110 @@ test('export Excel : deux feuilles, dates réelles, filtre par statut', async ()
 test('routes inconnues', async () => {
   assert.equal((await api('GET', '/api/nimporte')).status, 404);
   assert.equal((await api('GET', '/api/posts/po-inexistant')).status, 404);
+});
+
+/* ------------------------------------------------------------------ */
+/* Planification : « Planifié » passe en « Publié » à l'échéance       */
+/* ------------------------------------------------------------------ */
+
+test('echeanceAtteinte : date, heure et fuseau Europe/Paris', () => {
+  const maintenant = new Date('2026-11-04T10:30:00+01:00'); // 10 h 30 à Marseille
+  const post = (datePublication, heure = '') => ({ datePublication, heure });
+  assert.equal(echeanceAtteinte(post('2026-11-03'), maintenant), true, 'hier : échu');
+  assert.equal(echeanceAtteinte(post('2026-11-05'), maintenant), false, 'demain : pas encore');
+  assert.equal(echeanceAtteinte(post('2026-11-04'), maintenant), true, 'aujourd’hui sans heure : dès le début de la journée');
+  assert.equal(echeanceAtteinte(post('2026-11-04', '09:00'), maintenant), true, 'heure passée');
+  assert.equal(echeanceAtteinte(post('2026-11-04', '10:30'), maintenant), true, 'pile à l’heure');
+  assert.equal(echeanceAtteinte(post('2026-11-04', '10:31'), maintenant), false, 'une minute avant');
+  // 23 h 30 UTC = 00 h 30 le lendemain en France : on raisonne bien en heure française, pas en UTC.
+  assert.equal(echeanceAtteinte(post('2026-11-05'), new Date('2026-11-04T23:30:00Z')), true);
+  assert.equal(echeanceAtteinte(post('2026-11-05', '08:00'), new Date('2026-11-04T23:30:00Z')), false);
+});
+
+test('statut « planifie » : accepté pour une date à venir, refusé pour une date passée', async () => {
+  const base = { titre: 'Post planifié', plateformes: ['Instagram'] };
+  const futur = await api('POST', '/api/posts', { ...base, datePublication: '2099-01-01', heure: '11:30', statut: 'planifie' });
+  assert.equal(futur.status, 201);
+  assert.equal(futur.json.statut, 'planifie');
+
+  const passe = await api('POST', '/api/posts', { ...base, datePublication: '2020-01-01', statut: 'planifie' });
+  assert.equal(passe.status, 400);
+  assert.match(passe.json.error, /déjà passées/);
+
+  // Passer un post existant en « planifie » avec une date passée est refusé, et le post ne bouge pas.
+  const ancien = (await api('POST', '/api/posts', { ...base, datePublication: '2020-01-01', statut: 'valide' })).json;
+  assert.equal((await api('PUT', `/api/posts/${ancien.id}`, { statut: 'planifie' })).status, 400);
+  assert.equal((await api('GET', `/api/posts/${ancien.id}`)).json.statut, 'valide');
+
+  // Déplacer un post planifié vers une date passée est refusé aussi ; vers une date à venir, c'est possible.
+  assert.equal((await api('PUT', `/api/posts/${futur.json.id}`, { datePublication: '2020-06-01' })).status, 400);
+  const deplace = await api('PUT', `/api/posts/${futur.json.id}`, { datePublication: '2099-03-03' });
+  assert.equal(deplace.status, 200);
+  assert.equal(deplace.json.statut, 'planifie');
+
+  // Changement de statut en lot : tout ou rien.
+  const lot = await api('POST', '/api/posts/statut', { ids: [futur.json.id, ancien.id], statut: 'planifie' });
+  assert.equal(lot.status, 400);
+  assert.match(lot.json.error, /Planification impossible/);
+  assert.equal((await api('GET', `/api/posts/${futur.json.id}`)).json.statut, 'planifie');
+  assert.equal((await api('GET', `/api/posts/${ancien.id}`)).json.statut, 'valide', 'rien n’a changé');
+
+  for (const id of [futur.json.id, ancien.id]) await api('DELETE', `/api/posts/${id}`);
+});
+
+test('export Excel : les posts planifiés sont inclus par défaut', async () => {
+  const post = (await api('POST', '/api/posts', {
+    titre: 'Planifié exporté', datePublication: '2099-02-02', plateformes: ['Facebook'], statut: 'planifie',
+  })).json;
+  const defaut = await api('GET', '/api/export.xlsx?du=2099-02-02&au=2099-02-02', undefined, { raw: true });
+  assert.equal(defaut.status, 200);
+  assert.equal(defaut.headers.get('X-Calendy-Posts'), '1');
+  await api('DELETE', `/api/posts/${post.id}`);
+});
+
+test('les posts « planifie » arrivés à échéance passent seuls en « publie »', async () => {
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), 'calendy-planif-'));
+  const port = 4000 + Math.floor(Math.random() * 90);
+  const aujourdhui = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris' }).format(new Date());
+  const post = (id, datePublication, statut, heure = '') => ({
+    id, titre: id, datePublication, heure, plateformes: ['Instagram'], statut, description: '', hashtags: '', eventId: null,
+    imageIdee: '', atelier: '', angle: '', vigilance: '', photos: { meta: null, linkedin: null },
+  });
+  const donnees = { evenements: [], posts: [
+    post('po-echu', '2020-01-01', 'planifie'),
+    post('po-echu-heure', '2020-01-01', 'planifie', '09:00'),
+    post('po-aujourdhui', aujourdhui, 'planifie'),
+    post('po-futur', '2099-01-01', 'planifie', '10:00'),
+    post('po-valide', '2020-01-01', 'valide'),
+    post('po-idee', '2020-01-01', 'idee'),
+  ] };
+  fs.writeFileSync(path.join(dossier, 'data.json'), JSON.stringify(donnees));
+
+  const serveur = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, PORT: String(port), DATA_DIR: dossier, CALENDY_TOKEN: TOKEN },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      serveur.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
+      serveur.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
+      setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+    });
+
+    // Dès le démarrage, le fichier de données est à jour.
+    const surDisque = Object.fromEntries(JSON.parse(fs.readFileSync(path.join(dossier, 'data.json'), 'utf8')).posts.map((p) => [p.id, p.statut]));
+    assert.deepEqual(surDisque, {
+      'po-echu': 'publie', 'po-echu-heure': 'publie', 'po-aujourdhui': 'publie', 'po-futur': 'planifie', 'po-valide': 'valide', 'po-idee': 'idee',
+    });
+
+    // Et l'API renvoie ce même état : seuls les posts « planifie » échus ont bougé.
+    const res = await fetch(`http://127.0.0.1:${port}/api/state`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    const etat = await res.json();
+    const parId = Object.fromEntries(etat.posts.map((p) => [p.id, p.statut]));
+    assert.deepEqual(parId, surDisque);
+    assert.equal(etat.statuts.planifie, 'Planifié');
+  } finally {
+    serveur.kill();
+    fs.rmSync(dossier, { recursive: true, force: true });
+  }
 });

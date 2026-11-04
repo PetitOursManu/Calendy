@@ -43534,7 +43534,7 @@ var safe = (fn) => async (args) => {
     return fail(err.message);
   }
 };
-var STATUTS = ["idee", "valide", "refuse", "publie"];
+var STATUTS = ["idee", "valide", "planifie", "refuse", "publie"];
 var RESEAUX = ["Instagram", "Facebook", "LinkedIn"];
 var dateSchema = (label) => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "format AAAA-MM-JJ").describe(label);
 var champsPost = {
@@ -43554,7 +43554,8 @@ var INSTRUCTIONS = `Calendy est le calendrier \xE9ditorial des r\xE9seaux sociau
 Tu proposes des id\xE9es de posts ; c'est l'utilisateur qui d\xE9cide lesquels sont retenus.
 - Commence par apercu pour voir l'\xE9tat du calendrier, puis lister_evenements avant d'en cr\xE9er un (\xE9vite les doublons).
 - Rattache chaque post \xE0 son \xE9v\xE9nement (eventId) quand il y en a un ; sinon laisse vide (contenu \xAB coulisses \xBB).
-- Cr\xE9e toujours les posts avec le statut \xAB idee \xBB (c'est le d\xE9faut). Ne passe un post \xE0 \xAB valide \xBB ou \xAB refuse \xBB que si l'utilisateur le demande explicitement.
+- Cr\xE9e toujours les posts avec le statut \xAB idee \xBB (c'est le d\xE9faut). Ne passe un post \xE0 \xAB valide \xBB, \xAB planifie \xBB ou \xAB refuse \xBB que si l'utilisateur le demande explicitement.
+- Planifier : le statut \xAB planifie \xBB signifie valid\xE9 et programm\xE9. Calendy passe lui-m\xEAme le post en \xAB publie \xBB d\xE8s que sa date (et son heure, si elle est renseign\xE9e) est atteinte ; sans heure, d\xE8s le matin du jour pr\xE9vu. Calendy ne publie rien sur les r\xE9seaux, il met seulement le statut \xE0 jour. Un post dont la date est d\xE9j\xE0 pass\xE9e ne peut pas \xEAtre planifi\xE9 : propose-lui \xAB publie \xBB ou une nouvelle date (deplacer_post).
 - description = l\xE9gende pr\xEAte \xE0 publier, sans hashtags ; hashtags \xE0 part ; imageIdee = description de la photo \xE0 pr\xE9voir.
 - D\xE9placer (deplacer_post), cloner (cloner_post) et fusionner (fusionner_posts) des posts : seulement sur demande de l'utilisateur. Une copie est toujours \xAB idee \xBB. Avant de fusionner deux posts qui diff\xE8rent, montre-lui les deux textes et demande lequel garder : le post \xE9cart\xE9 est supprim\xE9.
 - Photos : facultatives, une par visuel (Instagram + Facebook partagent la m\xEAme, LinkedIn a la sienne). Tu ne cr\xE9es pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur. telecharger_photo enregistre sur cet ordinateur les photos d\xE9j\xE0 jointes \xE0 un post.
@@ -43578,7 +43579,7 @@ server.registerTool(
   "apercu",
   {
     title: "Aper\xE7u du calendrier",
-    description: "\xC9tat g\xE9n\xE9ral du calendrier : nombre de posts par statut, posts en attente de validation, prochains posts valid\xE9s, \xE9v\xE9nements \xE0 venir qui n'ont encore aucun post. \xC0 appeler en premier.",
+    description: "\xC9tat g\xE9n\xE9ral du calendrier : nombre de posts par statut, posts en attente de validation, prochains posts valid\xE9s ou planifi\xE9s, \xE9v\xE9nements \xE0 venir qui n'ont encore aucun post. \xC0 appeler en premier.",
     inputSchema: {},
     annotations: lecture
   },
@@ -43591,7 +43592,7 @@ server.registerTool(
       totalPosts: posts.length,
       parStatut,
       aValider: posts.filter((p) => p.statut === "idee").map((p) => resumePost(p, evenements)),
-      prochainsPostsValides: posts.filter((p) => p.statut === "valide" && p.datePublication >= today).slice(0, 8).map((p) => resumePost(p, evenements)),
+      prochainsPostsValides: posts.filter((p) => (p.statut === "valide" || p.statut === "planifie") && p.datePublication >= today).slice(0, 8).map((p) => resumePost(p, evenements)),
       evenementsAVenirSansPost: evenements.filter((e) => e.dateFin >= today && !posts.some((p) => p.eventId === e.id)).map((e) => ({ id: e.id, nom: e.nom, du: e.dateDebut, au: e.dateFin }))
     });
   })
@@ -43602,7 +43603,7 @@ server.registerTool(
     title: "Lister les posts",
     description: "Liste les posts du calendrier, tri\xE9s par date. Filtres facultatifs : statuts, p\xE9riode, mot \xE0 chercher. Renvoie un r\xE9sum\xE9 par post ; utilise lire_post pour le texte complet.",
     inputSchema: {
-      statuts: z.array(z.enum(STATUTS)).optional().describe("idee = \xE0 valider, valide, refuse, publie. Par d\xE9faut : tous."),
+      statuts: z.array(z.enum(STATUTS)).optional().describe("idee = \xE0 valider, valide, planifie, refuse, publie. Par d\xE9faut : tous."),
       du: dateSchema("Date de publication minimale (incluse).").optional(),
       au: dateSchema("Date de publication maximale (incluse).").optional(),
       recherche: z.string().optional().describe("Mot ou expression \xE0 chercher dans les textes du post."),
@@ -43796,10 +43797,10 @@ server.registerTool(
   "changer_statut",
   {
     title: "Changer le statut de posts",
-    description: "Valide, refuse, publie ou remet \xAB \xE0 valider \xBB un ou plusieurs posts. \xC0 n'utiliser que sur demande explicite de l'utilisateur (\xAB valide celui-ci \xBB, \xAB refuse les deux Halloween \xBB\u2026).",
+    description: "Valide, planifie, refuse, publie ou remet \xAB \xE0 valider \xBB un ou plusieurs posts. \xAB planifie \xBB : le post passera tout seul en \xAB publie \xBB \xE0 sa date et son heure (refus\xE9 si elles sont d\xE9j\xE0 pass\xE9es). \xC0 n'utiliser que sur demande explicite de l'utilisateur (\xAB valide celui-ci \xBB, \xAB planifie le post de jeudi \xBB, \xAB refuse les deux Halloween \xBB\u2026).",
     inputSchema: {
       ids: z.array(z.string()).min(1).describe("Identifiants des posts."),
-      statut: z.enum(STATUTS).describe("idee = \xE0 valider, valide, refuse, publie.")
+      statut: z.enum(STATUTS).describe("idee = \xE0 valider, valide, planifie (passe seul en publie \xE0 \xE9ch\xE9ance), refuse, publie.")
     },
     annotations: { ...ecriture, idempotentHint: true }
   },
@@ -43872,9 +43873,9 @@ server.registerTool(
   "exporter_excel",
   {
     title: "Exporter en Excel",
-    description: "G\xE9n\xE8re le fichier Excel du calendrier (feuilles \xAB Calendrier \xE9ditorial \xBB et \xAB \xC9v\xE9nements \xBB) et l'enregistre sur cet ordinateur. Par d\xE9faut, seuls les posts valid\xE9s ou publi\xE9s sont export\xE9s. Renvoie le chemin du fichier.",
+    description: "G\xE9n\xE8re le fichier Excel du calendrier (feuilles \xAB Calendrier \xE9ditorial \xBB et \xAB \xC9v\xE9nements \xBB) et l'enregistre sur cet ordinateur. Par d\xE9faut, seuls les posts valid\xE9s, planifi\xE9s ou publi\xE9s sont export\xE9s. Renvoie le chemin du fichier.",
     inputSchema: {
-      statuts: z.array(z.enum(STATUTS)).optional().describe("Statuts \xE0 inclure. Par d\xE9faut : valide et publie."),
+      statuts: z.array(z.enum(STATUTS)).optional().describe("Statuts \xE0 inclure. Par d\xE9faut : valide, planifie et publie."),
       du: dateSchema("Date de publication minimale (incluse).").optional(),
       au: dateSchema("Date de publication maximale (incluse).").optional(),
       avecPhotos: z.boolean().optional().describe("Inclure les photos des posts dans le fichier. Par d\xE9faut : oui (fichier plus lourd)."),
