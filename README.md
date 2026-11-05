@@ -33,6 +33,10 @@ Les données sont dans `data/data.json`, avec une copie `data.json.bak` à chaqu
 
 Chaque post contient : titre, légende, hashtags, idée d'image, date et heure de publication, réseaux (Instagram, Facebook, LinkedIn), événement lié, atelier, angle, point de vigilance et statut (idée à valider, validé, planifié, refusé, publié). Une **photo facultative** peut être jointe à chaque post : une pour Instagram + Facebook (la même sur les deux), une pour LinkedIn. Elle s'ajoute dans le formulaire du post (le bouton n'apparaît que pour les réseaux cochés), s'affiche dans « À valider » et se retire d'un clic. Un bouton **Télécharger** (sous la photo dans « À valider », et dans la fiche du post) enregistre la photo sur l'ordinateur ou le téléphone, sans repasser par Canva ; le fichier porte un nom clair, par exemple `2026-11-23_portes-ouvertes_instagram-facebook.jpg`. Les photos sont réduites à 1 600 px et enregistrées en JPEG par le navigateur avant l'envoi. La légende est comptée avec les hashtags, et l'appli prévient quand elle dépasse la limite d'Instagram (2 200 caractères) ou de LinkedIn (3 000).
 
+### Texte entre crochets
+
+Tout passage écrit **[entre crochets]** dans un champ texte (titre, légende, hashtags, idée d'image, atelier, angle, point de vigilance, et nom, explication ou lien Elisa30 d'un événement) est mis en avant automatiquement : fond jaune et texte en gras partout où le champ est affiché, fond jaune derrière le texte pendant la saisie. Pratique pour repérer ce qu'il reste à compléter avant de publier (`[date à confirmer]`, `[photo de l'équipe]`…). Rien à configurer, et le texte n'est pas modifié : les crochets restent dans les données, donc dans l'export Excel (qui ne les colore pas). Un crochet seul ou jamais refermé sur la même ligne n'est pas surligné.
+
 ### Planifier un post
 
 Dans la fiche d'un post, choisis le statut **Planifié** : le post passe **automatiquement en « Publié »** quand sa date de publication est atteinte, à son heure si elle est renseignée (sans heure, dès le début de la journée). Sous les statuts, l'appli annonce quand le basculement aura lieu.

@@ -188,6 +188,8 @@ button{cursor:pointer}
 .card.past .cdate{opacity:.6}
 .legende{white-space:pre-wrap;margin-top:10px;padding:10px 12px;background:var(--soft);border-radius:8px;border-left:3px solid var(--line-strong)}
 .tags{margin-top:8px;color:var(--denim-ink);font-weight:700;overflow-wrap:anywhere}
+/* texte [entre crochets] : mis en avant partout où un champ est affiché */
+mark.br{background:#FFE48A;color:var(--ink);font-weight:700;border-radius:4px;padding:0 3px;box-shadow:inset 0 -2px 0 #C99700;-webkit-box-decoration-break:clone;box-decoration-break:clone}
 .facts{display:grid;gap:8px;margin-top:10px;font-size:14.5px}
 .facts dt{font-weight:700}
 .facts dd{color:#2B3B42}
@@ -225,6 +227,14 @@ dialog.modal{width:min(500px,calc(100vw - 28px));border-radius:14px;box-shadow:0
 input[type=text],input[type=date],input[type=time],input[type=password],select,textarea{width:100%;padding:9px 11px;border:1.5px solid var(--line-strong);border-radius:8px;background:var(--surface)}
 textarea{resize:vertical;min-height:2.6em;line-height:1.45}
 input:hover,select:hover,textarea:hover{border-color:var(--ink)}
+/* surcouche des champs de saisie : même texte, invisible, avec un fond derrière les [crochets].
+   Aucune différence de graisse ni de marge dans la surcouche, sinon le texte se décalerait. */
+.hl-wrap{position:relative;border-radius:8px;background:var(--surface)}
+.hl-wrap>.hl-field{position:relative;display:block;background:transparent}
+.hl-back{position:absolute;inset:0;margin:0;padding:9px 11px;border:1.5px solid transparent;border-radius:8px;overflow:hidden;font:inherit;color:transparent;white-space:pre-wrap;overflow-wrap:break-word;pointer-events:none}
+.hl-back.ta{line-height:1.45}
+.hl-back.one{white-space:pre}
+.hl-back mark.br{background:#FFE48A;color:transparent;font-weight:inherit;padding:0;border-radius:3px;box-shadow:0 0 0 1px #E3B91F}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 fieldset{border:0;display:grid;gap:8px}
 .pills{display:flex;flex-wrap:wrap;gap:8px}
@@ -378,6 +388,9 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 /* ================= utilitaires ================= */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/** Comme esc, mais met en avant les passages [entre crochets] (à n'utiliser que dans du contenu HTML, jamais dans un attribut). */
+const CROCHETS = /\[[^\[\]\r\n]+\]/g;
+const escBr = (s) => esc(s).replace(CROCHETS, (m) => `<mark class="br">${m}</mark>`);
 const pad = (n) => String(n).padStart(2, '0');
 
 const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -691,7 +704,7 @@ function chip(p) {
   const nets = p.plateformes.map(badgeReseau).join('');
   const label = `${p.titre}, ${listeFr(p.plateformes)}, ${STATUTS[p.statut]}${hasPhoto(p) ? ', avec photo' : ''}`;
   return `<button type="button" class="chip s-${p.statut}" data-action="edit-post" data-id="${esc(p.id)}" title="${esc(p.titre)}" aria-label="${esc(label)}">
-    ${icon(ICONES[p.statut])}<span class="ttl">${esc(p.titre)}</span>
+    ${icon(ICONES[p.statut])}<span class="ttl">${escBr(p.titre)}</span>
     <span class="sub" aria-hidden="true">${p.heure ? `<span>${heureFr(p.heure)}</span>` : ''}${nets}${hasPhoto(p) ? `<span class="ph-ico" title="Photo jointe">${icon('i-photo')}</span>` : ''}</span></button>`;
 }
 
@@ -722,7 +735,7 @@ function laneHtml(iso, col, rowEnd, ctx) {
     const showLabel = start || col === 0;
     const n = diffDays(iso, ev.dateFin < rowEnd ? ev.dateFin : rowEnd) + 1;
     const cls = `bar${start ? ' start' : ''}${end ? ' end' : ''}`;
-    const lbl = showLabel ? `<span class="lbl" style="width:calc(${n * 100}% + ${n - 1}px - ${start ? 20 : 14}px)">${esc(ev.nom)}</span>` : '';
+    const lbl = showLabel ? `<span class="lbl" style="width:calc(${n * 100}% + ${n - 1}px - ${start ? 20 : 14}px)">${escBr(ev.nom)}</span>` : '';
     out += showLabel
       ? `<div class="lane"><button type="button" class="${cls}" data-action="edit-event" data-id="${esc(ev.id)}" title="${esc(`${ev.nom}, ${periode(ev.dateDebut, ev.dateFin)}`)}" aria-label="${esc(`Événement ${ev.nom}, ${periode(ev.dateDebut, ev.dateFin)}`)}">${lbl}</button></div>`
       : `<div class="lane"><span class="${cls}" data-action="edit-event" data-id="${esc(ev.id)}" aria-hidden="true"></span></div>`;
@@ -796,7 +809,7 @@ function agendaHtml(ym, garde = (p) => !state.hidden.has(p.statut)) {
   const last = `${ym}-${pad(new Date(Number(ym.slice(0, 4)), Number(ym.slice(5)), 0).getDate())}`;
   const evs = state.evenements.filter((e) => e.dateFin >= first && e.dateDebut <= last);
   const evHtml = evs.length
-    ? `<div class="ag-events">${evs.map((e) => `<button type="button" class="ag-ev" data-action="edit-event" data-id="${esc(e.id)}"><strong>${esc(e.nom)}</strong><small>${esc(periode(e.dateDebut, e.dateFin))}</small></button>`).join('')}</div>`
+    ? `<div class="ag-events">${evs.map((e) => `<button type="button" class="ag-ev" data-action="edit-event" data-id="${esc(e.id)}"><strong>${escBr(e.nom)}</strong><small>${esc(periode(e.dateDebut, e.dateFin))}</small></button>`).join('')}</div>`
     : '';
   const dayHtml = days.map((iso) => `<section class="ag-day"><div class="cdate"><span class="n">${dayNum(iso)}</span><small>${JOURS_COURTS[weekday(iso)]}</small></div>
     <div class="ag-posts">${state.posts.filter((p) => p.datePublication === iso && garde(p)).sort(parHeure).map(chip).join('')}</div></section>`).join('');
@@ -835,16 +848,16 @@ function validateView() {
     return `<article class="card idea${past ? ' past' : ''}" aria-labelledby="t-${esc(p.id)}">
       <div class="cdate"><small>${JOURS_COURTS[weekday(p.datePublication)]}</small><span class="n">${dayNum(p.datePublication)}</span><small>${MOIS_COURTS[monthIdx(p.datePublication)]}</small></div>
       <div>
-        <h3 id="t-${esc(p.id)}">${esc(p.titre)}${past ? '<span class="tag-past">Date passée</span>' : ''}</h3>
-        <p class="meta"><span class="nets">${p.plateformes.map(badgeReseau).join('')}</span>${p.heure ? `${heureFr(p.heure)} sur ` : 'Sur '}${esc(listeFr(p.plateformes))}${p.atelier ? `. Atelier : ${esc(p.atelier)}` : ''}</p>
-        ${p.description ? `<p class="legende">${esc(p.description)}</p>` : ''}
-        ${p.hashtags ? `<p class="tags">${esc(p.hashtags)}</p>` : ''}
+        <h3 id="t-${esc(p.id)}">${escBr(p.titre)}${past ? '<span class="tag-past">Date passée</span>' : ''}</h3>
+        <p class="meta"><span class="nets">${p.plateformes.map(badgeReseau).join('')}</span>${p.heure ? `${heureFr(p.heure)} sur ` : 'Sur '}${esc(listeFr(p.plateformes))}${p.atelier ? `. Atelier : ${escBr(p.atelier)}` : ''}</p>
+        ${p.description ? `<p class="legende">${escBr(p.description)}</p>` : ''}
+        ${p.hashtags ? `<p class="tags">${escBr(p.hashtags)}</p>` : ''}
         ${photosHtml(p)}
         <dl class="facts">
-          ${p.imageIdee ? `<div><dt>Visuel</dt><dd>${esc(p.imageIdee)}</dd></div>` : ''}
-          ${p.angle ? `<div><dt>Angle</dt><dd>${esc(p.angle)}</dd></div>` : ''}
-          ${ev ? `<div class="evnote"><p><strong>${esc(ev.nom)}</strong>, ${esc(periode(ev.dateDebut, ev.dateFin))}</p>${ev.explication ? `<p>${esc(ev.explication)}</p>` : ''}${ev.lienElisa30 ? `<p>${esc(ev.lienElisa30)}</p>` : ''}</div>` : ''}
-          ${p.vigilance ? `<div class="alert">${icon('i-warn')}<p><strong>À vérifier avant de publier.</strong> ${esc(p.vigilance)}</p></div>` : ''}
+          ${p.imageIdee ? `<div><dt>Visuel</dt><dd>${escBr(p.imageIdee)}</dd></div>` : ''}
+          ${p.angle ? `<div><dt>Angle</dt><dd>${escBr(p.angle)}</dd></div>` : ''}
+          ${ev ? `<div class="evnote"><p><strong>${escBr(ev.nom)}</strong>, ${esc(periode(ev.dateDebut, ev.dateFin))}</p>${ev.explication ? `<p>${escBr(ev.explication)}</p>` : ''}${ev.lienElisa30 ? `<p>${escBr(ev.lienElisa30)}</p>` : ''}</div>` : ''}
+          ${p.vigilance ? `<div class="alert">${icon('i-warn')}<p><strong>À vérifier avant de publier.</strong> ${escBr(p.vigilance)}</p></div>` : ''}
         </dl>
       </div>
       <div class="actions">
@@ -885,10 +898,10 @@ function eventsView() {
     const upcoming = e.dateFin >= today;
     return `<article class="card ev-card" style="grid-template-columns:minmax(0,1fr)">
       <div>
-        <h3>${esc(e.nom)}<span class="meta">${esc(periode(e.dateDebut, e.dateFin))}</span>
+        <h3>${escBr(e.nom)}<span class="meta">${esc(periode(e.dateDebut, e.dateFin))}</span>
           ${upcoming && !posts.length ? '<span class="pill warn">Aucun post prévu</span>' : ''}</h3>
-        ${e.explication ? `<p style="margin-top:8px">${esc(e.explication)}</p>` : ''}
-        ${e.lienElisa30 ? `<p class="meta" style="margin-top:6px">Lien avec Elisa30 : ${esc(e.lienElisa30)}</p>` : ''}
+        ${e.explication ? `<p style="margin-top:8px">${escBr(e.explication)}</p>` : ''}
+        ${e.lienElisa30 ? `<p class="meta" style="margin-top:6px">Lien avec Elisa30 : ${escBr(e.lienElisa30)}</p>` : ''}
         ${posts.length ? `<div class="ev-posts">${posts.map(chip).join('')}</div>` : ''}
         <div class="actions" style="grid-column:auto">
           <button class="btn small" data-action="new-post" data-event="${esc(e.id)}" data-date="${upcoming && e.dateDebut < today ? today : e.dateDebut}">${icon('i-plus')}Ajouter un post</button>
@@ -926,14 +939,44 @@ function openDrawer(html) {
   dlg._dirty = false;
   dlg.querySelector('form').addEventListener('input', () => { dlg._dirty = true; });
   dlg.showModal();
+  initHighlights(dlg);
   const first = dlg.querySelector('input[type=text],input[type=date]');
   if (first && !dlg.querySelector('[data-edit]')) first.focus();
+}
+
+/** Champs marqués data-hl : le texte [entre crochets] est surligné pendant la saisie, grâce à une copie invisible placée derrière le champ. */
+function initHighlights(root) {
+  for (const f of root.querySelectorAll('[data-hl]')) {
+    if (f.parentElement.classList.contains('hl-wrap')) continue;
+    const multi = f.tagName === 'TEXTAREA';
+    const wrap = document.createElement('div');
+    wrap.className = 'hl-wrap';
+    const back = document.createElement('div');
+    back.className = `hl-back ${multi ? 'ta' : 'one'}`;
+    back.setAttribute('aria-hidden', 'true');
+    f.before(wrap);
+    wrap.append(back, f);
+    f.classList.add('hl-field');
+    const paint = () => {
+      back.innerHTML = escBr(f.value) + (multi ? '\n' : '');
+      // la barre de défilement du champ réduit sa largeur utile : la copie doit passer à la ligne au même endroit
+      const cs = getComputedStyle(f);
+      const barre = f.offsetWidth - f.clientWidth - parseFloat(cs.borderLeftWidth) - parseFloat(cs.borderRightWidth);
+      back.style.paddingRight = `${11 + Math.max(0, barre || 0)}px`;
+      back.scrollTop = f.scrollTop;
+      back.scrollLeft = f.scrollLeft;
+    };
+    f.addEventListener('input', paint);
+    f.addEventListener('scroll', () => { back.scrollTop = f.scrollTop; back.scrollLeft = f.scrollLeft; });
+    new ResizeObserver(paint).observe(f);
+    paint();
+  }
 }
 
 function evInfoHtml(id) {
   const ev = id ? evById(id) : null;
   if (!ev) return '<p class="hint">Contenu sans événement : un post « coulisses » ou une idée libre.</p>';
-  return `<div class="evnote"><p><strong>${esc(periode(ev.dateDebut, ev.dateFin))}</strong></p>${ev.explication ? `<p>${esc(ev.explication)}</p>` : ''}${ev.lienElisa30 ? `<p>${esc(ev.lienElisa30)}</p>` : ''}</div>`;
+  return `<div class="evnote"><p><strong>${esc(periode(ev.dateDebut, ev.dateFin))}</strong></p>${ev.explication ? `<p>${escBr(ev.explication)}</p>` : ''}${ev.lienElisa30 ? `<p>${escBr(ev.lienElisa30)}</p>` : ''}</div>`;
 }
 
 function postForm(p, isNew) {
@@ -950,7 +993,7 @@ function postForm(p, isNew) {
           <button type="button" class="btn small" data-action="move-post" data-id="${esc(p.id)}">${icon('i-move')}Déplacer</button>
           <button type="button" class="btn small" data-action="clone-post" data-id="${esc(p.id)}">${icon('i-copy')}Cloner</button>
           <button type="button" class="btn small" data-action="merge-post" data-id="${esc(p.id)}">${icon('i-merge')}Fusionner…</button></div>`}
-        <label class="f"><span>Titre <em>obligatoire</em></span><input type="text" name="titre" maxlength="200" required value="${esc(p.titre)}"></label>
+        <label class="f"><span>Titre <em>obligatoire</em></span><input type="text" name="titre" data-hl maxlength="200" required value="${esc(p.titre)}"></label>
         <div class="row2">
           <label class="f"><span>Date de publication <em>obligatoire</em></span><input type="date" name="datePublication" required value="${esc(p.datePublication)}"></label>
           <label class="f"><span>Heure</span><input type="time" name="heure" value="${esc(p.heure)}"></label>
@@ -958,17 +1001,17 @@ function postForm(p, isNew) {
         <fieldset><legend>Réseaux <em>au moins un</em></legend><div class="pills">${nets}</div></fieldset>
         <label class="f"><span>Événement lié</span><select name="eventId">${evOptions}</select></label>
         <div class="evinfo" id="evInfo" aria-live="polite">${evInfoHtml(p.eventId)}</div>
-        <label class="f"><span>Description (légende du post)</span><textarea name="description" rows="8" maxlength="5000">${esc(p.description)}</textarea></label>
-        <label class="f"><span>Hashtags</span><input type="text" name="hashtags" value="${esc(p.hashtags)}" placeholder="#ESAT #Handicap"></label>
+        <label class="f"><span>Description (légende du post)</span><textarea name="description" data-hl rows="8" maxlength="5000">${esc(p.description)}</textarea></label>
+        <label class="f"><span>Hashtags</span><input type="text" name="hashtags" data-hl value="${esc(p.hashtags)}" placeholder="#ESAT #Handicap"></label>
         <p class="count" id="count" aria-live="polite"></p>
-        <label class="f"><span>Idée d’image</span><textarea name="imageIdee" rows="2" maxlength="1000">${esc(p.imageIdee)}</textarea></label>
+        <label class="f"><span>Idée d’image</span><textarea name="imageIdee" data-hl rows="2" maxlength="1000">${esc(p.imageIdee)}</textarea></label>
         <fieldset class="photos"><legend>Photo <em>facultative</em></legend>
           <div class="ph-grid">${photoSlotHtml(p, 'meta')}${photoSlotHtml(p, 'linkedin')}</div>
           <p class="hint">Instagram et Facebook utilisent la même photo. LinkedIn a la sienne. Seuls les réseaux cochés plus haut apparaissent ici.</p>
         </fieldset>
-        <label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>
-        <label class="f"><span>Angle du post</span><textarea name="angle" rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>
-        <label class="f"><span>Point de vigilance</span><textarea name="vigilance" rows="2" maxlength="2000">${esc(p.vigilance)}</textarea></label>
+        <label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" data-hl maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>
+        <label class="f"><span>Angle du post</span><textarea name="angle" data-hl rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>
+        <label class="f"><span>Point de vigilance</span><textarea name="vigilance" data-hl rows="2" maxlength="2000">${esc(p.vigilance)}</textarea></label>
         <fieldset><legend>Statut</legend><div class="pills">${sts}</div><p class="hint" id="planifHint" aria-live="polite"></p></fieldset>
       </div>
       <footer class="dr-foot">
@@ -1039,14 +1082,14 @@ function openEvent(id, defaults = {}) {
     <form class="dr-form" data-form="event" data-id="${esc(e.id)}" ${ev ? 'data-edit' : ''} novalidate>
       <div class="dr-body">
         <div class="form-error" role="alert" hidden></div>
-        <label class="f"><span>Nom <em>obligatoire</em></span><input type="text" name="nom" maxlength="200" required value="${esc(e.nom)}"></label>
+        <label class="f"><span>Nom <em>obligatoire</em></span><input type="text" name="nom" data-hl maxlength="200" required value="${esc(e.nom)}"></label>
         <div class="row2">
           <label class="f"><span>Date de début <em>obligatoire</em></span><input type="date" name="dateDebut" required value="${esc(e.dateDebut)}"></label>
           <label class="f"><span>Date de fin</span><input type="date" name="dateFin" value="${esc(e.dateFin === e.dateDebut ? '' : e.dateFin)}"></label>
         </div>
         <p class="hint">Laisse la date de fin vide pour un événement d’un seul jour.</p>
-        <label class="f"><span>Ce qu’il faut savoir</span><textarea name="explication" rows="5" maxlength="3000">${esc(e.explication)}</textarea></label>
-        <label class="f"><span>Lien avec Elisa30</span><textarea name="lienElisa30" rows="3" maxlength="2000">${esc(e.lienElisa30)}</textarea></label>
+        <label class="f"><span>Ce qu’il faut savoir</span><textarea name="explication" data-hl rows="5" maxlength="3000">${esc(e.explication)}</textarea></label>
+        <label class="f"><span>Lien avec Elisa30</span><textarea name="lienElisa30" data-hl rows="3" maxlength="2000">${esc(e.lienElisa30)}</textarea></label>
         ${ev ? `<div class="f"><span>Posts liés (${posts.length})</span>${posts.length ? `<div class="ev-posts">${posts.map(chip).join('')}</div>` : '<p class="hint">Aucun post pour cet événement.</p>'}
           <div><button type="button" class="btn small" data-action="new-post" data-event="${esc(ev.id)}" data-date="${esc(ev.dateDebut)}">${icon('i-plus')}Ajouter un post</button></div></div>` : ''}
       </div>
@@ -1275,7 +1318,7 @@ function openDeplacer(id) {
   const p = postById(id);
   if (!p) return;
   const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Déplacer le post')}<div class="am-body">
-    <p><strong>${esc(p.titre)}</strong><br>Prévu le ${esc(dateAvecJour(p.datePublication))}${p.heure ? ` à ${esc(heureFr(p.heure))}` : ''}, sur ${esc(reseauxTxt(p))}.</p>
+    <p><strong>${escBr(p.titre)}</strong><br>Prévu le ${esc(dateAvecJour(p.datePublication))}${p.heure ? ` à ${esc(heureFr(p.heure))}` : ''}, sur ${esc(reseauxTxt(p))}.</p>
     <p class="form-error" role="alert" hidden></p>
     <label class="f"><span>Nouvelle date</span><input type="date" name="date" required value="${esc(p.datePublication)}"></label>
     <p class="hint">Le statut, le texte et les photos ne changent pas.</p>${noteBrouillon()}</div>
@@ -1310,7 +1353,7 @@ function openCloner(id) {
   const p = postById(id);
   if (!p) return;
   const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Cloner le post')}<div class="am-body">
-    <p><strong>${esc(p.titre)}</strong><br>Prévu le ${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
+    <p><strong>${escBr(p.titre)}</strong><br>Prévu le ${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
     <p class="form-error" role="alert" hidden></p>
     <fieldset><legend>Dates des copies <em>une copie par date</em></legend>
       <div class="date-rows" id="cloneDates">${ligneDate()}</div>
@@ -1347,7 +1390,7 @@ function candidatsFusion(p) {
     .map((x) => x.q);
 }
 
-const candidatHtml = (q, coche) => `<label class="cand"><input type="radio" name="autre" value="${esc(q.id)}"${coche ? ' checked' : ''}><span class="cand-body"><strong>${esc(q.titre)}</strong><small><span>${esc(dateAvecJour(q.datePublication))}</span><span class="nets">${q.plateformes.map(badgeReseau).join('')}</span><span>${esc(STATUTS[q.statut])}</span></small></span></label>`;
+const candidatHtml = (q, coche) => `<label class="cand"><input type="radio" name="autre" value="${esc(q.id)}"${coche ? ' checked' : ''}><span class="cand-body"><strong>${escBr(q.titre)}</strong><small><span>${esc(dateAvecJour(q.datePublication))}</span><span class="nets">${q.plateformes.map(badgeReseau).join('')}</span><span>${esc(STATUTS[q.statut])}</span></small></span></label>`;
 
 // Étape 1 : choisir le second post.
 function openFusion(id, choisi = '') {
@@ -1356,12 +1399,12 @@ function openFusion(id, choisi = '') {
   const cands = candidatsFusion(p);
   if (!cands.length) {
     ouvrirAction(`<div class="modal-form">${actionHead('Fusionner avec un autre post')}<div class="am-body">
-      <p>Aucun autre post ne peut être fusionné avec « ${esc(p.titre)} » : la fusion réunit deux posts qui n’ont aucun réseau en commun (par exemple un post Instagram et un post Facebook).</p></div>
+      <p>Aucun autre post ne peut être fusionné avec « ${escBr(p.titre)} » : la fusion réunit deux posts qui n’ont aucun réseau en commun (par exemple un post Instagram et un post Facebook).</p></div>
       <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Fermer</button></div></div>`);
     return;
   }
   const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Fusionner avec un autre post')}<div class="am-body">
-    <p><strong>${esc(p.titre)}</strong><br>${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
+    <p><strong>${escBr(p.titre)}</strong><br>${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
     <p class="hint">Choisis le post à réunir avec celui-ci : un post qui n’a aucun réseau en commun avec lui, par exemple la version Facebook d’un post Instagram. Les deux n’en feront plus qu’un.</p>
     <label class="f"><span>Chercher un post</span><input type="text" id="fusFiltre" placeholder="Un mot du titre…" autocomplete="off"></label>
     <div class="cand-list blk" id="fusListe" role="radiogroup" aria-label="Posts pouvant être fusionnés"></div></div>
