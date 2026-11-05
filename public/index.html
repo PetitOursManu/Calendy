@@ -289,6 +289,20 @@ fieldset{border:0;display:grid;gap:8px}
 .ph-fig img{display:block;width:100%;max-height:220px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#EEF1EF}
 .ph-fig figcaption{margin-top:4px;font-size:13px;color:var(--mute)}
 .ph-fig .btn{margin-top:6px}
+/* clic sur une photo : affichage en grand */
+.ph-zoom{position:relative;display:block;width:100%;padding:0;border:0;border-radius:8px;background:none;cursor:zoom-in}
+.ph-box{position:relative}
+.ph-box .ph-zoom{position:absolute;inset:0;height:100%}
+.ph-zoom .ic{position:absolute;right:6px;bottom:6px;width:28px;height:28px;padding:6px;border-radius:7px;background:rgba(22,36,43,.78);color:#fff;pointer-events:none}
+.ph-zoom:hover .ic,.ph-zoom:focus-visible .ic{background:var(--denim)}
+dialog.lightbox{margin:0;width:100vw;height:100dvh;max-width:none;max-height:none;background:rgba(10,18,22,.96);color:#fff}
+dialog.lightbox[open]{display:grid;place-items:center;animation:fade .15s ease-out}
+dialog.lightbox::backdrop{background:transparent}
+.lb-close{position:fixed;top:14px;right:14px;z-index:1;color:var(--ink)}
+.lb-fig{display:grid;gap:10px;justify-items:center;max-width:100%;margin:0;padding:64px 16px 16px;cursor:zoom-out}
+.lb-fig img{max-width:100%;max-height:calc(100dvh - 120px);object-fit:contain;border-radius:6px;background:#EEF1EF;box-shadow:0 10px 50px rgba(0,0,0,.5)}
+.lb-fig figcaption{max-width:min(100%,900px);font-size:14px;color:#E8EEEA;text-align:center;overflow-wrap:anywhere}
+@keyframes fade{from{opacity:0}to{opacity:1}}
 .chip .ph-ico{display:inline-flex;align-items:center}
 .chip .ph-ico .ic{margin-top:0;font-size:12px}
 @media (max-width:640px){.ph-grid{grid-template-columns:1fr}}
@@ -351,6 +365,7 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
   <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
   <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
   <symbol id="i-photo" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="1.6"/><path d="M4 17l5-4.5 3.5 3 3-2.5 4.5 4"/></symbol>
+  <symbol id="i-zoom" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="M15 15l5.5 5.5M10.5 8v5M8 10.5h5"/></symbol>
   <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></symbol>
   <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/></symbol>
@@ -378,6 +393,7 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 <dialog id="exportDlg" class="modal" aria-labelledby="dlgTitle"></dialog>
 <dialog id="tokenDlg" class="modal" aria-labelledby="dlgTitle"></dialog>
 <dialog id="actionDlg" class="modal" aria-labelledby="actionTitle"></dialog>
+<dialog id="photoDlg" class="lightbox" aria-labelledby="photoCap"></dialog>
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <noscript><p style="padding:24px">Calendy a besoin de JavaScript pour fonctionner.</p></noscript>
 
@@ -552,9 +568,22 @@ function hydratePhotos(root = document) {
   });
 }
 
+/** Enrobe une photo dans un bouton : un clic (ou Entrée au clavier) l'ouvre en grand. */
+const zoomPhoto = (imgHtml, slot) =>
+  `<button type="button" class="ph-zoom" data-action="photo-zoom" aria-label="Agrandir la photo ${esc(SLOTS[slot].titre)}">${imgHtml}${icon('i-zoom')}</button>`;
+
+function ouvrirPhoto(img) {
+  const src = img && img.getAttribute('src');
+  if (!src) return; // la photo n'est pas encore chargée
+  const dlg = $('#photoDlg');
+  dlg.innerHTML = `<button type="button" class="icon-btn lb-close" data-action="close-dialog" aria-label="Fermer l’image">${icon('i-x')}</button>
+    <figure class="lb-fig" data-action="close-dialog"><img src="${esc(src)}" alt="${esc(img.alt)}"><figcaption id="photoCap">${esc(img.alt)}</figcaption></figure>`;
+  dlg.showModal();
+}
+
 function photosHtml(p) {
   const figs = Object.keys(SLOTS).filter((s) => p.photos && p.photos[s]).map((s) =>
-    `<figure class="ph-fig"><img data-photo="${esc(p.id)}" data-slot="${s}" alt="Photo prévue pour ${esc(listeFr(SLOTS[s].reseaux))} : ${esc(p.titre)}"><figcaption>Photo ${esc(SLOTS[s].titre)}</figcaption>${boutonTelecharger(p.id, s)}</figure>`);
+    `<figure class="ph-fig">${zoomPhoto(`<img data-photo="${esc(p.id)}" data-slot="${s}" alt="Photo prévue pour ${esc(listeFr(SLOTS[s].reseaux))} : ${esc(p.titre)}">`, s)}<figcaption>Photo ${esc(SLOTS[s].titre)}</figcaption>${boutonTelecharger(p.id, s)}</figure>`);
   return figs.length ? `<div class="ph-row">${figs.join('')}</div>` : '';
 }
 
@@ -610,7 +639,7 @@ function photoSlotHtml(p, slot) {
   const visible = p.plateformes.some((n) => s.reseaux.includes(n));
   return `<div class="ph-slot" data-slot="${slot}"${visible ? '' : ' hidden'}>
       <h4>${esc(s.titre)}</h4>
-      <div class="ph-box" data-box>${has ? `<img data-photo="${esc(p.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(s.titre)}">` : '<span>Aucune photo</span>'}</div>
+      <div class="ph-box" data-box>${has ? zoomPhoto(`<img data-photo="${esc(p.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(s.titre)}">`, slot) : '<span>Aucune photo</span>'}</div>
       <div class="ph-actions">
         <button type="button" class="btn small" data-action="photo-pick" data-slot="${slot}">${icon('i-photo')}<span data-pick-label>${has ? 'Changer' : 'Ajouter'}</span></button>
         ${boutonTelecharger(p.id, slot, !has)}
@@ -628,8 +657,8 @@ function photoSlotRefresh(form, slot) {
   const existing = postById(form.dataset.id);
   const had = Boolean(existing && existing.photos && existing.photos[slot]) && !st.remove;
   const box = el.querySelector('[data-box]');
-  if (st.blob) box.innerHTML = `<img src="${st.url}" alt="Nouvelle photo pour ${esc(SLOTS[slot].titre)}">`;
-  else if (had) { box.innerHTML = `<img data-photo="${esc(existing.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(SLOTS[slot].titre)}">`; hydratePhotos(box); }
+  if (st.blob) box.innerHTML = zoomPhoto(`<img src="${st.url}" alt="Nouvelle photo pour ${esc(SLOTS[slot].titre)}">`, slot);
+  else if (had) { box.innerHTML = zoomPhoto(`<img data-photo="${esc(existing.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(SLOTS[slot].titre)}">`, slot); hydratePhotos(box); }
   else box.innerHTML = '<span>Aucune photo</span>';
   el.querySelector('[data-pick-label]').textContent = st.blob || had ? 'Changer' : 'Ajouter';
   el.querySelector('[data-action=photo-remove]').hidden = !(st.blob || had);
@@ -1604,6 +1633,7 @@ document.addEventListener('click', (e) => {
     case 'photo-pick': t.closest('.ph-slot').querySelector('input[type=file]').click(); break;
     case 'photo-remove': photoRemoved(t.closest('form'), d.slot); break;
     case 'photo-download': guard(() => downloadPhoto(d.id, d.slot)); break;
+    case 'photo-zoom': ouvrirPhoto(t.querySelector('img')); break;
     case 'open-export': openExport(); break;
     case 'move-post': openDeplacer(d.id); break;
     case 'clone-post': openCloner(d.id); break;
@@ -1663,7 +1693,7 @@ $('#drawer').addEventListener('cancel', (e) => {
   if (dlg._dirty && !window.confirm('Abandonner les modifications en cours ?')) e.preventDefault();
 });
 $('#tokenDlg').addEventListener('cancel', (e) => e.preventDefault());
-for (const id of ['drawer', 'exportDlg', 'tokenDlg', 'actionDlg']) {
+for (const id of ['drawer', 'exportDlg', 'tokenDlg', 'actionDlg', 'photoDlg']) {
   $(`#${id}`).addEventListener('close', (e) => { e.target.innerHTML = ''; e.target._dirty = false; });
 }
 
