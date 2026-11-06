@@ -127,21 +127,32 @@ async function envoyerPhoto(id, slot, corps, type) {
   return { status: res.status, json: await res.json() };
 }
 
-test('photos : facultatives, une par visuel (Instagram+Facebook / LinkedIn), remplaçables et supprimables', async () => {
+// Ajoute une image à la fin du carrousel d'un visuel (POST), alors que `envoyerPhoto` (PUT) remplace tout le visuel.
+async function ajouterImage(id, slot, corps, type) {
+  const res = await fetch(`${BASE}/api/posts/${id}/photo/${slot}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': type },
+    body: corps,
+  });
+  return { status: res.status, json: await res.json() };
+}
+
+test('photos : facultatives, par visuel (Instagram+Facebook / LinkedIn), remplaçables et supprimables', async () => {
   const { json: post } = await api('POST', '/api/posts', {
     titre: 'Test photo', datePublication: '2026-11-05', plateformes: ['Instagram', 'Facebook', 'LinkedIn'],
   });
-  assert.deepEqual(post.photos, { meta: null, linkedin: null }, 'sans photo par défaut');
+  assert.deepEqual(post.photos, { meta: [], linkedin: [] }, 'sans photo par défaut');
   assert.equal((await api('GET', `/api/posts/${post.id}/photo/meta`)).status, 404);
 
   const m = await envoyerPhoto(post.id, 'meta', JPEG, 'image/jpeg');
   assert.equal(m.status, 200);
-  assert.equal(m.json.photos.meta.largeur, 40);
-  assert.equal(m.json.photos.meta.hauteur, 30);
-  assert.equal(m.json.photos.linkedin, null);
+  assert.equal(m.json.photos.meta.length, 1);
+  assert.equal(m.json.photos.meta[0].largeur, 40);
+  assert.equal(m.json.photos.meta[0].hauteur, 30);
+  assert.deepEqual(m.json.photos.linkedin, []);
   const l = await envoyerPhoto(post.id, 'linkedin', PNG, 'image/png');
-  assert.equal(l.json.photos.linkedin.type, 'image/png');
-  assert.notEqual(l.json.photos.linkedin.fichier, l.json.photos.meta.fichier, 'deux visuels distincts');
+  assert.equal(l.json.photos.linkedin[0].type, 'image/png');
+  assert.notEqual(l.json.photos.linkedin[0].fichier, l.json.photos.meta[0].fichier, 'deux visuels distincts');
 
   const lue = await api('GET', `/api/posts/${post.id}/photo/meta`, undefined, { raw: true });
   assert.equal(lue.status, 200);
@@ -149,20 +160,21 @@ test('photos : facultatives, une par visuel (Instagram+Facebook / LinkedIn), rem
   assert.deepEqual(Buffer.from(await lue.arrayBuffer()), JPEG);
 
   // Remplacer : l'ancien fichier disparaît du disque
-  const ancien = m.json.photos.meta.fichier;
+  const ancien = m.json.photos.meta[0].fichier;
   const r = await envoyerPhoto(post.id, 'meta', PNG, 'image/png');
-  assert.notEqual(r.json.photos.meta.fichier, ancien);
+  assert.equal(r.json.photos.meta.length, 1, 'remplacer ne laisse qu’une image');
+  assert.notEqual(r.json.photos.meta[0].fichier, ancien);
   assert.ok(!fs.existsSync(path.join(dataDir, 'images', ancien)), 'ancien fichier supprimé');
 
   // Modifier le post ne touche pas aux photos, et le JSON ne peut pas les forger
-  const maj = await api('PUT', `/api/posts/${post.id}`, { titre: 'Test photo 2', photos: { meta: { fichier: '../../etc/passwd' } } });
-  assert.equal(maj.json.photos.meta.fichier, r.json.photos.meta.fichier);
+  const maj = await api('PUT', `/api/posts/${post.id}`, { titre: 'Test photo 2', photos: { meta: [{ fichier: '../../etc/passwd' }] } });
+  assert.equal(maj.json.photos.meta[0].fichier, r.json.photos.meta[0].fichier);
 
-  // Suppression d'une photo, puis du post (le fichier restant est effacé)
+  // Suppression des images d'un visuel, puis du post (le fichier restant est effacé)
   const del = await api('DELETE', `/api/posts/${post.id}/photo/meta`);
-  assert.equal(del.json.photos.meta, null);
-  assert.ok(del.json.photos.linkedin, 'la photo LinkedIn reste');
-  const fichierLinkedin = l.json.photos.linkedin.fichier;
+  assert.deepEqual(del.json.photos.meta, []);
+  assert.equal(del.json.photos.linkedin.length, 1, 'la photo LinkedIn reste');
+  const fichierLinkedin = l.json.photos.linkedin[0].fichier;
   assert.ok(fs.existsSync(path.join(dataDir, 'images', fichierLinkedin)));
   await api('DELETE', `/api/posts/${post.id}`);
   assert.ok(!fs.existsSync(path.join(dataDir, 'images', fichierLinkedin)), 'fichier effacé avec le post');
@@ -178,7 +190,7 @@ test('photos : refus des fichiers qui ne sont pas des images JPEG/PNG', async ()
   assert.equal((await envoyerPhoto('po-inconnu', 'meta', JPEG, 'image/jpeg')).status, 404);
   const sans = await fetch(`${BASE}/api/posts/${post.id}/photo/meta`, { method: 'PUT', headers: { 'Content-Type': 'image/jpeg' }, body: JPEG });
   assert.equal(sans.status, 401, 'jeton exigé');
-  assert.deepEqual((await api('GET', `/api/posts/${post.id}`)).json.photos, { meta: null, linkedin: null });
+  assert.deepEqual((await api('GET', `/api/posts/${post.id}`)).json.photos, { meta: [], linkedin: [] });
   } finally {
     await api('DELETE', `/api/posts/${post.id}`);
   }
@@ -209,6 +221,48 @@ test('export Excel : les photos sont intégrées (colonnes seulement si besoin) 
   const exclues = await lire('/api/export.xlsx?statuts=valide&du=2026-11-07&au=2026-11-07&photos=0');
   assert.equal(exclues.getWorksheet('Calendrier éditorial').getImages().length, 0);
   await api('DELETE', `/api/posts/${post.id}`);
+});
+
+test('export Excel : un carrousel est rangé en grille de miniatures, dans l’ordre, à l’intérieur de sa cellule', async () => {
+  const { json: post } = await api('POST', '/api/posts', {
+    titre: 'Export carrousel', datePublication: '2026-11-09', plateformes: ['Instagram', 'Facebook', 'LinkedIn'], statut: 'valide',
+  });
+  try {
+    for (let i = 0; i < 12; i++) await ajouterImage(post.id, 'meta', ...IMAGES_TEST[i % 2]);
+    await ajouterImage(post.id, 'linkedin', PNG, 'image/png');
+    const res = await api('GET', '/api/export.xlsx?statuts=valide&du=2026-11-09&au=2026-11-09', undefined, { raw: true });
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+    const ws = wb.getWorksheet('Calendrier éditorial');
+    const entetes = ws.getRow(1).values; // indexé à partir de 1
+    const colMeta = entetes.indexOf('Photo Instagram + Facebook');
+    const colLinkedin = entetes.indexOf('Photo LinkedIn');
+    const images = ws.getImages();
+    assert.equal(images.length, 13, '12 images du carrousel + 1 LinkedIn');
+
+    const EMU_PX = 9525;
+    const meta = images.filter((img) => img.range.tl.nativeCol === colMeta - 1);
+    assert.equal(meta.length, 12);
+    assert.equal(images.filter((img) => img.range.tl.nativeCol === colLinkedin - 1).length, 1);
+    assert.ok(ws.getColumn(colMeta).width > ws.getColumn(colLinkedin).width, 'colonne élargie pour le carrousel');
+
+    const largeurCellule = Math.round(ws.getColumn(colMeta).width * 7 + 5) * EMU_PX;
+    const hauteurCellule = ws.getRow(2).height * 12700; // points → EMU
+    assert.ok(ws.getRow(2).height <= 409, 'ligne dans la limite d’Excel');
+    let precedent = null;
+    for (const img of meta) {
+      const { tl, ext } = img.range;
+      assert.equal(tl.nativeRow, 1, 'ancrée sur la ligne du post');
+      assert.ok(tl.nativeColOff + ext.width * EMU_PX <= largeurCellule, 'dans la largeur de la colonne');
+      assert.ok(tl.nativeRowOff + ext.height * EMU_PX <= hauteurCellule, 'dans la hauteur de la ligne');
+      const position = [tl.nativeRowOff, tl.nativeColOff];
+      if (precedent) assert.ok(position[0] > precedent[0] || (position[0] === precedent[0] && position[1] > precedent[1]), 'ordre de lecture : de gauche à droite, puis ligne suivante');
+      precedent = position;
+    }
+    assert.equal(new Set(meta.map((img) => `${img.range.tl.nativeRowOff}/${img.range.tl.nativeColOff}`)).size, 12, 'aucune miniature superposée');
+  } finally {
+    await api('DELETE', `/api/posts/${post.id}`);
+  }
 });
 
 test('premier démarrage : seed chargé (18 posts, 8 événements)', async () => {
@@ -295,6 +349,186 @@ test('cycle de vie d’un post : création, modification, statut, suppression', 
 
 const fichiersImages = () => fs.readdirSync(path.join(dataDir, 'images'));
 
+const IMAGES_TEST = [[JPEG, 'image/jpeg'], [PNG, 'image/png']];
+const fichiersDe = (post, slot = 'meta') => post.photos[slot].map((f) => f.fichier);
+
+test('photos : carrousel — images ajoutées à la suite, réordonnées et retirées une à une', async () => {
+  const { json: post } = await api('POST', '/api/posts', { titre: 'Carrousel', datePublication: '2026-11-08', plateformes: ['Instagram', 'Facebook', 'LinkedIn'] });
+  try {
+    assert.equal((await ajouterImage(post.id, 'meta', JPEG, 'image/jpeg')).status, 201);
+    await ajouterImage(post.id, 'meta', PNG, 'image/png');
+    const c = await ajouterImage(post.id, 'meta', JPEG, 'image/jpeg');
+    const liste = c.json.photos.meta;
+    assert.equal(liste.length, 3, 'POST ajoute à la suite');
+    assert.deepEqual(liste.map((f) => f.type), ['image/jpeg', 'image/png', 'image/jpeg'], 'ordre d’ajout conservé');
+    assert.equal(new Set(liste.map((f) => f.fichier)).size, 3, 'trois fichiers distincts');
+    assert.deepEqual(c.json.photos.linkedin, [], 'l’autre visuel n’est pas touché');
+
+    // Lecture : sans nom de fichier, la première image ; avec un nom, l'image demandée
+    const premiere = await api('GET', `/api/posts/${post.id}/photo/meta`, undefined, { raw: true });
+    assert.deepEqual(Buffer.from(await premiere.arrayBuffer()), JPEG);
+    const deuxieme = await api('GET', `/api/posts/${post.id}/photo/meta/${liste[1].fichier}`, undefined, { raw: true });
+    assert.equal(deuxieme.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await deuxieme.arrayBuffer()), PNG);
+    assert.equal((await api('GET', `/api/posts/${post.id}/photo/meta/inconnue.jpg`)).status, 404);
+    assert.equal((await api('GET', `/api/posts/${post.id}/photo/linkedin/${liste[0].fichier}`)).status, 404, 'une image n’est lisible que dans son visuel');
+
+    // Changer l'ordre
+    const [f1, f2, f3] = fichiersDe(c.json);
+    const ordre = await api('PUT', `/api/posts/${post.id}/photo/meta/ordre`, { fichiers: [f3, f1, f2] });
+    assert.equal(ordre.status, 200);
+    assert.deepEqual(fichiersDe(ordre.json), [f3, f1, f2]);
+    assert.deepEqual(fichiersDe((await api('GET', `/api/posts/${post.id}`)).json), [f3, f1, f2], 'ordre enregistré');
+    for (const fichiers of [[f1, f2], [f1, f1, f2], [f1, f2, 'autre.jpg'], [f1, f2, f3, f3], 'x', undefined]) {
+      assert.equal((await api('PUT', `/api/posts/${post.id}/photo/meta/ordre`, { fichiers })).status, 400, `ordre refusé : ${JSON.stringify(fichiers)}`);
+    }
+    assert.deepEqual(fichiersDe((await api('GET', `/api/posts/${post.id}`)).json), [f3, f1, f2], 'après les refus, rien n’a bougé');
+    assert.equal((await api('PUT', '/api/posts/po-inconnu/photo/meta/ordre', { fichiers: [] })).status, 404);
+
+    // Retirer une seule image : les autres restent, son fichier est effacé
+    const retire = await api('DELETE', `/api/posts/${post.id}/photo/meta/${f1}`);
+    assert.deepEqual(fichiersDe(retire.json), [f3, f2]);
+    assert.ok(!fichiersImages().includes(f1), 'fichier de l’image retirée effacé');
+    assert.ok(fichiersImages().includes(f3) && fichiersImages().includes(f2));
+    assert.equal((await api('DELETE', `/api/posts/${post.id}/photo/meta/${f1}`)).status, 404, 'déjà retirée');
+
+    // L'ancienne route d'envoi (PUT) remplace tout le visuel : l'ancien carrousel disparaît
+    const remplace = await envoyerPhoto(post.id, 'meta', PNG, 'image/png');
+    assert.equal(remplace.json.photos.meta.length, 1);
+    assert.ok(!fichiersImages().includes(f3) && !fichiersImages().includes(f2), 'tout l’ancien carrousel effacé');
+
+    // Retirer le visuel entier, puis supprimer le post : plus aucun fichier
+    await ajouterImage(post.id, 'meta', JPEG, 'image/jpeg');
+    await ajouterImage(post.id, 'linkedin', JPEG, 'image/jpeg');
+    assert.deepEqual((await api('DELETE', `/api/posts/${post.id}/photo/meta`)).json.photos.meta, []);
+    const restant = fichiersDe((await api('GET', `/api/posts/${post.id}`)).json, 'linkedin')[0];
+    assert.ok(fichiersImages().includes(restant));
+    await api('DELETE', `/api/posts/${post.id}`);
+    assert.ok(!fichiersImages().includes(restant), 'fichiers effacés avec le post');
+  } finally {
+    await api('DELETE', `/api/posts/${post.id}`);
+  }
+});
+
+test('photos : limite d’images par visuel, sans fichier orphelin', async () => {
+  const { json: post } = await api('POST', '/api/posts', { titre: 'Trop d’images', datePublication: '2026-11-08', plateformes: ['LinkedIn'] });
+  const avant = fichiersImages().length;
+  try {
+    for (let i = 0; i < 20; i++) {
+      const [corps, type] = IMAGES_TEST[i % 2];
+      assert.equal((await ajouterImage(post.id, 'linkedin', corps, type)).status, 201, `image ${i + 1}`);
+    }
+    const trop = await ajouterImage(post.id, 'linkedin', JPEG, 'image/jpeg');
+    assert.equal(trop.status, 400);
+    assert.match(trop.json.error, /20 images/);
+    assert.equal(fichiersImages().length, avant + 20, 'la 21e image n’est pas écrite sur le disque');
+    assert.equal((await api('GET', `/api/posts/${post.id}`)).json.photos.linkedin.length, 20);
+    // Le visuel d'à côté a sa propre limite, et remplacer reste possible quand c'est plein
+    assert.equal((await ajouterImage(post.id, 'meta', JPEG, 'image/jpeg')).status, 201);
+    assert.equal((await envoyerPhoto(post.id, 'linkedin', PNG, 'image/png')).json.photos.linkedin.length, 1);
+  } finally {
+    await api('DELETE', `/api/posts/${post.id}`);
+  }
+  assert.equal(fichiersImages().length, avant, 'plus rien sur le disque');
+});
+
+test('photos : les anciennes données (une photo par visuel) sont lues comme une liste d’une image', async () => {
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), 'calendy-ancien-'));
+  const port = 4600 + Math.floor(Math.random() * 90);
+  fs.mkdirSync(path.join(dossier, 'images'));
+  fs.writeFileSync(path.join(dossier, 'images', 'po-ancien-meta-abc123.jpg'), JPEG);
+  const fiche = { fichier: 'po-ancien-meta-abc123.jpg', type: 'image/jpeg', largeur: 40, hauteur: 30, octets: JPEG.length };
+  const post = {
+    id: 'po-ancien', titre: 'Ancien post', datePublication: '2026-11-03', heure: '', plateformes: ['Instagram', 'Facebook'], statut: 'valide',
+    description: '', hashtags: '', eventId: null, imageIdee: '', atelier: '', angle: '', vigilance: '', photos: { meta: fiche, linkedin: null },
+  };
+  fs.writeFileSync(path.join(dossier, 'data.json'), JSON.stringify({ evenements: [], posts: [post] }));
+  const serveur = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, PORT: String(port), DATA_DIR: dossier, CALENDY_TOKEN: TOKEN },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  try {
+    await new Promise((resolve, reject) => {
+      serveur.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
+      serveur.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
+      setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+    });
+    const entetes = { Authorization: `Bearer ${TOKEN}` };
+    const lu = await (await fetch(`http://127.0.0.1:${port}/api/posts/po-ancien`, { headers: entetes })).json();
+    assert.deepEqual(lu.photos, { meta: [fiche], linkedin: [] }, 'la photo unique devient une liste d’une image');
+    const img = await fetch(`http://127.0.0.1:${port}/api/posts/po-ancien/photo/meta`, { headers: entetes });
+    assert.deepEqual(Buffer.from(await img.arrayBuffer()), JPEG, 'la photo existante est toujours servie');
+
+    // On peut maintenant lui ajouter d'autres images : le carrousel démarre avec la photo d'origine
+    const ajout = await fetch(`http://127.0.0.1:${port}/api/posts/po-ancien/photo/meta`, {
+      method: 'POST', headers: { ...entetes, 'Content-Type': 'image/png' }, body: PNG,
+    });
+    assert.equal(ajout.status, 201);
+    const apres = await ajout.json();
+    assert.deepEqual(apres.photos.meta.map((f) => f.type), ['image/jpeg', 'image/png']);
+    assert.equal(apres.photos.meta[0].fichier, fiche.fichier, 'la photo d’origine reste la première');
+    const surDisque = JSON.parse(fs.readFileSync(path.join(dossier, 'data.json'), 'utf8')).posts[0];
+    assert.ok(Array.isArray(surDisque.photos.meta) && Array.isArray(surDisque.photos.linkedin), 'données réécrites au nouveau format');
+  } finally {
+    serveur.kill();
+    fs.rmSync(dossier, { recursive: true, force: true });
+  }
+});
+
+test('cloner et fusionner : un carrousel est copié ou choisi en entier, dans l’ordre', async () => {
+  const creer = async (titre, plateformes) => (await api('POST', '/api/posts', { titre, datePublication: '2026-11-14', plateformes })).json;
+  const ig = await creer('Carrousel IG', ['Instagram']);
+  const fb = await creer('Carrousel FB', ['Facebook']);
+  const x = await creer('Sans image', ['Instagram']);
+  const y = await creer('Avec images', ['Facebook']);
+  const ids = [ig.id, fb.id, x.id, y.id];
+  const avantTout = fichiersImages().length;
+  try {
+    for (const [corps, type] of [[JPEG, 'image/jpeg'], [PNG, 'image/png'], [JPEG, 'image/jpeg']]) await ajouterImage(ig.id, 'meta', corps, type);
+    for (const [corps, type] of [[PNG, 'image/png'], [PNG, 'image/png']]) await ajouterImage(fb.id, 'meta', corps, type);
+    for (const [corps, type] of [[PNG, 'image/png'], [JPEG, 'image/jpeg']]) await ajouterImage(y.id, 'meta', corps, type);
+    const originales = fichiersDe((await api('GET', `/api/posts/${ig.id}`)).json);
+
+    // Cloner : toutes les images, dans l'ordre, avec des fichiers propres à la copie
+    const clone = (await api('POST', `/api/posts/${ig.id}/cloner`, { dates: ['2026-11-21'] })).json.clones[0];
+    ids.push(clone.id);
+    assert.deepEqual(clone.photos.meta.map((f) => f.type), ['image/jpeg', 'image/png', 'image/jpeg']);
+    assert.ok(fichiersDe(clone).every((f) => !originales.includes(f)), 'fichiers propres à la copie');
+    for (const [i, f] of clone.photos.meta.entries()) {
+      const lue = await api('GET', `/api/posts/${clone.id}/photo/meta/${f.fichier}`, undefined, { raw: true });
+      assert.deepEqual(Buffer.from(await lue.arrayBuffer()), i === 1 ? PNG : JPEG, `image ${i + 1} copiée à l’identique`);
+    }
+
+    // Fusionner en choisissant les images de l'autre post : elles remplacent tout le carrousel du premier, sans mélange
+    const res = await api('POST', '/api/posts/fusionner', { ids: [ig.id, fb.id], choix: { photo: fb.id } });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.json.post.photos.meta.map((f) => f.type), ['image/png', 'image/png']);
+    assert.ok(originales.every((f) => !fichiersImages().includes(f)), 'images écartées effacées');
+    assert.equal((await api('GET', `/api/posts/${clone.id}/photo/meta`, undefined, { raw: true })).status, 200, 'la copie garde les siennes');
+
+    // Fusionner sans choix : le post gardé n'a rien, il reprend toutes les images de l'autre, dans l'ordre
+    const attendues = fichiersDe((await api('GET', `/api/posts/${y.id}`)).json);
+    const res2 = await api('POST', '/api/posts/fusionner', { ids: [x.id, y.id] });
+    assert.deepEqual(fichiersDe(res2.json.post), attendues);
+    assert.ok(attendues.every((f) => fichiersImages().includes(f)), 'images reprises conservées');
+
+    // « aucune » vide tout le visuel et efface les fichiers
+    const p = await creer('Carrousel à écarter', ['Instagram']);
+    const q = await creer('Autre réseau', ['Facebook']);
+    ids.push(p.id, q.id);
+    await ajouterImage(p.id, 'meta', JPEG, 'image/jpeg');
+    await ajouterImage(p.id, 'meta', PNG, 'image/png');
+    const aEcarter = fichiersDe((await api('GET', `/api/posts/${p.id}`)).json);
+    const res3 = await api('POST', '/api/posts/fusionner', { ids: [p.id, q.id], choix: { photo: 'aucune' } });
+    assert.equal(res3.status, 200);
+    assert.deepEqual(res3.json.post.photos.meta, []);
+    assert.ok(aEcarter.every((f) => !fichiersImages().includes(f)), 'toutes les images écartées sont effacées');
+  } finally {
+    for (const id of ids) await api('DELETE', `/api/posts/${id}`);
+  }
+  assert.equal(fichiersImages().length, avantTout, 'plus aucune image de ces posts sur le disque');
+});
+
 test('déplacer un post : la date change, le reste est conservé', async () => {
   const { json: post } = await api('POST', '/api/posts', {
     titre: 'À déplacer', datePublication: '2026-11-10', heure: '11:30', plateformes: ['Instagram', 'Facebook'], statut: 'valide',
@@ -328,7 +562,7 @@ test('cloner un post : une copie « idée à valider » par date, avec ses propr
     assert.equal(c.heure, '09:00');
     assert.equal(c.eventId, 'ev-duoday');
     assert.deepEqual(c.plateformes, ['Instagram', 'Facebook']);
-    assert.ok(c.photos.meta && c.photos.meta.fichier !== (await api('GET', `/api/posts/${post.id}`)).json.photos.meta.fichier, 'fichier photo propre');
+    assert.ok(c.photos.meta.length === 1 && c.photos.meta[0].fichier !== (await api('GET', `/api/posts/${post.id}`)).json.photos.meta[0].fichier, 'fichier photo propre');
     const lue = await api('GET', `/api/posts/${c.id}/photo/meta`, undefined, { raw: true });
     assert.deepEqual(Buffer.from(await lue.arrayBuffer()), JPEG, 'photo copiée à l’identique');
   }
@@ -363,8 +597,8 @@ test('fusionner un post Instagram et un post Facebook en un seul', async () => {
     plateformes: ['Facebook'], statut: 'valide', angle: 'Angle FB', eventId: 'ev-duoday',
   })).json;
   await envoyerPhoto(ig.id, 'meta', JPEG, 'image/jpeg');
-  const photoFb = (await envoyerPhoto(fb.id, 'meta', PNG, 'image/png')).json.photos.meta.fichier;
-  const photoIg = (await api('GET', `/api/posts/${ig.id}`)).json.photos.meta.fichier;
+  const photoFb = (await envoyerPhoto(fb.id, 'meta', PNG, 'image/png')).json.photos.meta[0].fichier;
+  const photoIg = (await api('GET', `/api/posts/${ig.id}`)).json.photos.meta[0].fichier;
 
   // Choix explicites : texte et photo de Facebook, titre de l'Instagram
   const res = await api('POST', '/api/posts/fusionner', { ids: [ig.id, fb.id], choix: { description: fb.id, photo: fb.id } });
@@ -381,7 +615,7 @@ test('fusionner un post Instagram et un post Facebook en un seul', async () => {
   assert.equal(p.angle, 'Angle FB', 'champ vide du post gardé : repris de l’autre');
   assert.equal(p.eventId, 'ev-duoday', 'idem pour l’événement');
   assert.equal(p.statut, 'valide', 'statuts identiques : conservé');
-  assert.equal(p.photos.meta.fichier, photoFb, 'photo choisie');
+  assert.equal(p.photos.meta[0].fichier, photoFb, 'photo choisie');
   assert.equal((await api('GET', `/api/posts/${fb.id}`)).status, 404, 'l’autre post est supprimé');
   assert.ok(!fichiersImages().includes(photoIg), 'photo non retenue effacée');
   assert.ok(fichiersImages().includes(photoFb), 'photo retenue conservée');
@@ -396,8 +630,8 @@ test('fusionner : valeurs par défaut, statuts différents, photo « aucune » e
   const b = (await api('POST', '/api/posts', { titre: 'B', description: 'Texte B', datePublication: '2026-11-12', plateformes: ['Facebook', 'LinkedIn'], statut: 'refuse' })).json;
   await envoyerPhoto(a.id, 'meta', JPEG, 'image/jpeg');
   await envoyerPhoto(b.id, 'linkedin', PNG, 'image/png');
-  const photoA = (await api('GET', `/api/posts/${a.id}`)).json.photos.meta.fichier;
-  const photoLi = (await api('GET', `/api/posts/${b.id}`)).json.photos.linkedin.fichier;
+  const photoA = (await api('GET', `/api/posts/${a.id}`)).json.photos.meta[0].fichier;
+  const photoLi = (await api('GET', `/api/posts/${b.id}`)).json.photos.linkedin[0].fichier;
 
   // On garde B : il conserve son identifiant, sa date et son titre
   const res = await api('POST', '/api/posts/fusionner', { ids: [a.id, b.id], garder: b.id, choix: { photo: 'aucune' } });
@@ -410,8 +644,8 @@ test('fusionner : valeurs par défaut, statuts différents, photo « aucune » e
   assert.equal(p.datePublication, '2026-11-12');
   assert.equal(p.description, 'Texte B');
   assert.equal(p.statut, 'idee', 'statuts différents sans choix : à re-valider');
-  assert.equal(p.photos.meta, null, 'photo « aucune »');
-  assert.equal(p.photos.linkedin.fichier, photoLi, 'la photo LinkedIn suit');
+  assert.deepEqual(p.photos.meta, [], 'photo « aucune »');
+  assert.equal(p.photos.linkedin[0].fichier, photoLi, 'la photo LinkedIn suit');
   assert.ok(!fichiersImages().includes(photoA), 'photo écartée effacée');
   assert.ok(fichiersImages().includes(photoLi));
   await api('DELETE', `/api/posts/${b.id}`);

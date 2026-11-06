@@ -289,6 +289,22 @@ fieldset{border:0;display:grid;gap:8px}
 .ph-fig img{display:block;width:100%;max-height:220px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#EEF1EF}
 .ph-fig figcaption{margin-top:4px;font-size:13px;color:var(--mute)}
 .ph-fig .btn{margin-top:6px}
+/* plusieurs images sur un visuel = carrousel : vignettes numérotées, dans l'ordre de publication */
+.ph-strip{display:block}
+.ph-car{width:auto;max-width:min(100%,430px)}
+.ph-car .ph-strip{display:flex;flex-wrap:wrap;gap:6px}
+.ph-car .ph-thumb{width:86px}
+.ph-car .ph-fig img,.ph-car img{max-height:none;aspect-ratio:1;height:auto}
+.ph-thumb{position:relative}
+.ph-num{position:absolute;left:5px;top:5px;display:grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:var(--denim);color:#fff;font-size:12.5px;font-weight:700;line-height:1;pointer-events:none;box-shadow:0 0 0 2px #fff}
+.ph-count{font-weight:400;color:var(--mute);font-size:13.5px}
+.ph-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;padding:8px;border:1.5px solid var(--line-strong);border-radius:8px;background:var(--surface)}
+.ph-item{display:grid;gap:5px;align-content:start}
+.ph-item .ph-zoom{aspect-ratio:1;overflow:hidden;border:1px solid var(--line)}
+.ph-item .ph-zoom img{width:100%;height:100%;object-fit:contain;background:#EEF1EF}
+.ph-tools{display:flex;gap:3px}
+.ph-tools .btn{flex:1;min-width:0;padding:4px 0;font-size:15px}
+.ph-tools .btn .ic{width:16px;height:16px}
 /* clic sur une photo : affichage en grand */
 .ph-zoom{position:relative;display:block;width:100%;padding:0;border:0;border-radius:8px;background:none;cursor:zoom-in}
 .ph-box{position:relative}
@@ -299,12 +315,17 @@ dialog.lightbox{margin:0;width:100vw;height:100dvh;max-width:none;max-height:non
 dialog.lightbox[open]{display:grid;place-items:center;animation:fade .15s ease-out}
 dialog.lightbox::backdrop{background:transparent}
 .lb-close{position:fixed;top:14px;right:14px;z-index:1;color:var(--ink)}
+.lb-nav{position:fixed;top:50%;transform:translateY(-50%);z-index:1;width:48px;height:56px;font-size:32px;line-height:1;color:var(--ink)}
+.lb-prev{left:12px}
+.lb-next{right:12px}
+@media (max-width:640px){.lb-nav{top:auto;bottom:18px;transform:none}.lb-fig{padding-bottom:84px}.lb-fig img{max-height:calc(100dvh - 180px)}}
 .lb-fig{display:grid;gap:10px;justify-items:center;max-width:100%;margin:0;padding:64px 16px 16px;cursor:zoom-out}
 .lb-fig img{max-width:100%;max-height:calc(100dvh - 120px);object-fit:contain;border-radius:6px;background:#EEF1EF;box-shadow:0 10px 50px rgba(0,0,0,.5)}
 .lb-fig figcaption{max-width:min(100%,900px);font-size:14px;color:#E8EEEA;text-align:center;overflow-wrap:anywhere}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 .chip .ph-ico{display:inline-flex;align-items:center}
 .chip .ph-ico .ic{margin-top:0;font-size:12px}
+.chip .ph-ico .ph-n{margin-left:1px;font-size:11px;font-weight:700;line-height:1}
 @media (max-width:640px){.ph-grid{grid-template-columns:1fr}}
 
 /* ---------- glisser-déposer, déplacer, cloner, fusionner ---------- */
@@ -342,6 +363,10 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 .mg-who{display:block;margin-bottom:3px;font-size:12.5px;font-weight:700;color:var(--mute)}
 .mg-opt input:checked+.mg-box .mg-who{color:var(--denim-ink)}
 .mg-img{display:block;width:100%;max-height:170px;object-fit:contain;margin-top:4px;border-radius:6px;background:#EEF1EF}
+.mg-imgs{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.mg-imgs .mg-img{width:calc(33.333% - 3px);max-height:76px;margin-top:0}
+.mg-imgs.un .mg-img{width:100%;max-height:170px}
+.mg-box small{display:block;margin-top:4px;color:var(--mute);font-size:13px}
 .mg-auto h3{font-size:15px;margin-bottom:6px}
 .mg-auto dl{display:grid;gap:5px;font-size:14px}
 .mg-auto dt{display:inline;font-weight:700}
@@ -542,18 +567,26 @@ async function guard(fn) {
 }
 
 /* ================= photos ================= */
-// Une photo facultative par visuel : Instagram et Facebook partagent la même, LinkedIn a la sienne.
+// Des images facultatives par visuel : Instagram et Facebook partagent les mêmes, LinkedIn a les siennes.
+// Plusieurs images sur un même visuel forment un carrousel, dans l'ordre choisi.
 const SLOTS = { meta: { titre: 'Instagram + Facebook', reseaux: ['Instagram', 'Facebook'] }, linkedin: { titre: 'LinkedIn', reseaux: ['LinkedIn'] } };
+const PHOTOS_MAX = 20; // même limite que le serveur
 const photoCache = new Map();
-const hasPhoto = (p) => Boolean(p.photos && (p.photos.meta || p.photos.linkedin));
+/** Images d'un visuel, dans l'ordre (accepte aussi l'ancien format : une seule photo, ou aucune). */
+const listePhotos = (p, slot) => {
+  const v = p && p.photos && p.photos[slot];
+  return Array.isArray(v) ? v : v ? [v] : [];
+};
+const nbPhotos = (p) => Object.keys(SLOTS).reduce((n, s) => n + listePhotos(p, s).length, 0);
+const hasPhoto = (p) => nbPhotos(p) > 0;
 
-// Les photos sont protégées par le jeton : on les télécharge avec l'en-tête puis on les affiche via une URL locale.
-function photoUrl(p, slot) {
-  const f = p.photos && p.photos[slot];
-  if (!f) return Promise.resolve('');
-  const key = `${p.id}/${slot}/${f.fichier}`;
+// Les images sont protégées par le jeton : on les télécharge avec l'en-tête puis on les affiche via une URL locale.
+function photoUrl(id, slot, fichier) {
+  if (!fichier) { const f = listePhotos(postById(id), slot)[0]; fichier = f && f.fichier; }
+  if (!fichier) return Promise.resolve('');
+  const key = `${id}/${slot}/${fichier}`;
   if (!photoCache.has(key)) {
-    photoCache.set(key, request('GET', `/api/posts/${p.id}/photo/${slot}?v=${encodeURIComponent(f.fichier)}`)
+    photoCache.set(key, request('GET', `/api/posts/${id}/photo/${slot}/${encodeURIComponent(fichier)}`)
       .then(async (res) => { if (!res.ok) throw new Error('photo'); return URL.createObjectURL(await res.blob()); })
       .catch(() => { photoCache.delete(key); return ''; }));
   }
@@ -562,54 +595,98 @@ function photoUrl(p, slot) {
 
 function hydratePhotos(root = document) {
   root.querySelectorAll('img[data-photo]:not([src])').forEach(async (img) => {
-    const p = postById(img.dataset.photo);
-    const url = p ? await photoUrl(p, img.dataset.slot) : '';
+    const url = await photoUrl(img.dataset.photo, img.dataset.slot, img.dataset.fichier);
     if (url && img.isConnected) img.src = url;
   });
 }
 
-/** Enrobe une photo dans un bouton : un clic (ou Entrée au clavier) l'ouvre en grand. */
-const zoomPhoto = (imgHtml, slot) =>
-  `<button type="button" class="ph-zoom" data-action="photo-zoom" aria-label="Agrandir la photo ${esc(SLOTS[slot].titre)}">${imgHtml}${icon('i-zoom')}</button>`;
+/** Enrobe une image dans un bouton : un clic (ou Entrée au clavier) l'ouvre en grand. */
+const zoomPhoto = (imgHtml, slot, numero = 1, total = 1) =>
+  `<button type="button" class="ph-zoom" data-action="photo-zoom" aria-label="${total > 1 ? `Agrandir l’image ${numero} sur ${total} (${esc(SLOTS[slot].titre)})` : `Agrandir la photo ${esc(SLOTS[slot].titre)}`}">${imgHtml}${icon('i-zoom')}</button>`;
+
+/* Affichage en grand. Les images d'un même carrousel (conteneur data-gal) se parcourent avec les flèches de l'écran ou du clavier. */
+const lightbox = { images: [], i: 0 };
 
 function ouvrirPhoto(img) {
   const src = img && img.getAttribute('src');
-  if (!src) return; // la photo n'est pas encore chargée
-  const dlg = $('#photoDlg');
-  dlg.innerHTML = `<button type="button" class="icon-btn lb-close" data-action="close-dialog" aria-label="Fermer l’image">${icon('i-x')}</button>
-    <figure class="lb-fig" data-action="close-dialog"><img src="${esc(src)}" alt="${esc(img.alt)}"><figcaption id="photoCap">${esc(img.alt)}</figcaption></figure>`;
-  dlg.showModal();
+  if (!src) return; // l'image n'est pas encore chargée
+  const gal = img.closest('[data-gal]');
+  const liste = gal ? [...gal.querySelectorAll('.ph-zoom img[src]')] : [img];
+  lightbox.images = liste.map((el) => ({ src: el.getAttribute('src'), alt: el.alt }));
+  lightbox.i = Math.max(0, liste.indexOf(img));
+  afficherLightbox(true);
+  $('#photoDlg').showModal();
 }
 
+function afficherLightbox(complet) {
+  const { images, i } = lightbox;
+  const { src, alt } = images[i];
+  const multi = images.length > 1;
+  const legende = multi ? `Image ${i + 1} sur ${images.length}. ${alt}` : alt;
+  const fig = `<figure class="lb-fig" data-action="close-dialog"><img src="${esc(src)}" alt="${esc(alt)}"><figcaption id="photoCap">${esc(legende)}</figcaption></figure>`;
+  const dlg = $('#photoDlg');
+  if (complet) {
+    dlg.innerHTML = `<button type="button" class="icon-btn lb-close" data-action="close-dialog" aria-label="Fermer l’image">${icon('i-x')}</button>
+      ${multi ? '<button type="button" class="icon-btn lb-nav lb-prev" data-action="photo-prev" aria-label="Image précédente">‹</button><button type="button" class="icon-btn lb-nav lb-next" data-action="photo-next" aria-label="Image suivante">›</button>' : ''}
+      ${fig}`;
+  } else {
+    dlg.querySelector('.lb-fig').outerHTML = fig;
+  }
+}
+
+function lightboxStep(delta) {
+  const n = lightbox.images.length;
+  if (n < 2) return;
+  lightbox.i = (lightbox.i + delta + n) % n;
+  afficherLightbox(false);
+}
+
+const altPhoto = (p, slot) => `Photo prévue pour ${listeFr(SLOTS[slot].reseaux)} : ${p.titre}`;
+
+/** Les images jointes à un post (carte « À valider » et fiche) : une photo seule en grand, un carrousel en vignettes numérotées. */
 function photosHtml(p) {
-  const figs = Object.keys(SLOTS).filter((s) => p.photos && p.photos[s]).map((s) =>
-    `<figure class="ph-fig">${zoomPhoto(`<img data-photo="${esc(p.id)}" data-slot="${s}" alt="Photo prévue pour ${esc(listeFr(SLOTS[s].reseaux))} : ${esc(p.titre)}">`, s)}<figcaption>Photo ${esc(SLOTS[s].titre)}</figcaption>${boutonTelecharger(p.id, s)}</figure>`);
+  const figs = Object.keys(SLOTS).filter((s) => listePhotos(p, s).length).map((s) => {
+    const liste = listePhotos(p, s);
+    const n = liste.length;
+    const vignettes = liste.map((f, i) =>
+      `<div class="ph-thumb">${zoomPhoto(`<img data-photo="${esc(p.id)}" data-slot="${s}" data-fichier="${esc(f.fichier)}" alt="${esc(altPhoto(p, s))}">`, s, i + 1, n)}${n > 1 ? `<span class="ph-num" aria-hidden="true">${i + 1}</span>` : ''}</div>`).join('');
+    const legende = n > 1 ? `Carrousel ${SLOTS[s].titre} : ${n} images` : `Photo ${SLOTS[s].titre}`;
+    return `<figure class="ph-fig${n > 1 ? ' ph-car' : ''}" data-gal><div class="ph-strip">${vignettes}</div><figcaption>${esc(legende)}</figcaption>${boutonTelecharger(p.id, s, false, n)}</figure>`;
+  });
   return figs.length ? `<div class="ph-row">${figs.join('')}</div>` : '';
 }
 
-const boutonTelecharger = (id, slot, hidden = false) =>
-  `<button type="button" class="btn small" data-action="photo-download" data-id="${esc(id)}" data-slot="${slot}" aria-label="Télécharger la photo ${esc(SLOTS[slot].titre)}"${hidden ? ' hidden' : ''}>${icon('i-down')}Télécharger</button>`;
+const libelleTelecharger = (slot, n) => (n > 1 ? `Télécharger les ${n} images ${SLOTS[slot].titre}` : `Télécharger la photo ${SLOTS[slot].titre}`);
+const boutonTelecharger = (id, slot, hidden = false, n = 1) =>
+  `<button type="button" class="btn small" data-action="photo-download" data-id="${esc(id)}" data-slot="${slot}" aria-label="${esc(libelleTelecharger(slot, n))}"${hidden ? ' hidden' : ''}>${icon('i-down')}<span>${n > 1 ? `Télécharger les ${n} images` : 'Télécharger'}</span></button>`;
 
-/** Nom de fichier lisible pour une photo téléchargée : 2026-11-23_titre-du-post_instagram-facebook.jpg */
-function nomFichierPhoto(p, slot) {
-  const slug = String(p.titre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+/** Nom de fichier lisible pour une image téléchargée : 2026-11-23_titre-du-post_instagram-facebook.jpg (puis _1, _2… pour un carrousel). */
+function nomFichierPhoto(p, slot, i = 0, n = 1) {
+  const slug = String(p.titre || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-').slice(0, 60).replace(/^-+|-+$/g, '') || 'post';
-  const ext = p.photos[slot].type === 'image/png' ? 'png' : 'jpg';
-  return `${p.datePublication}_${slug}_${slot === 'meta' ? 'instagram-facebook' : 'linkedin'}.${ext}`;
+  const image = listePhotos(p, slot)[i];
+  const ext = image && image.type === 'image/png' ? 'png' : 'jpg';
+  return `${p.datePublication}_${slug}_${slot === 'meta' ? 'instagram-facebook' : 'linkedin'}${n > 1 ? `_${i + 1}` : ''}.${ext}`;
 }
 
-/** Enregistre sur l'appareil la photo jointe à un post, telle qu'elle est stockée dans Calendy (pas besoin de repasser par Canva). */
+/** Enregistre sur l'appareil les images jointes à un post, telles qu'elles sont stockées dans Calendy (pas besoin de repasser par Canva). */
 async function downloadPhoto(id, slot) {
   const p = postById(id);
-  if (!p || !p.photos || !p.photos[slot]) throw new Error('Ce post n’a pas de photo pour ce réseau.');
-  const url = await photoUrl(p, slot);
-  if (!url) throw new Error('La photo n’a pas pu être récupérée sur le serveur.');
-  const name = nomFichierPhoto(p, slot);
-  const a = Object.assign(document.createElement('a'), { href: url, download: name });
-  document.body.append(a);
-  a.click();
-  a.remove();
-  toast(`${name} téléchargée.`);
+  const liste = listePhotos(p, slot);
+  if (!liste.length) throw new Error('Ce post n’a pas de photo pour ce réseau.');
+  const noms = [];
+  for (const [i, f] of liste.entries()) {
+    const url = await photoUrl(id, slot, f.fichier);
+    if (!url) throw new Error(liste.length > 1 ? `L’image ${i + 1} n’a pas pu être récupérée sur le serveur.` : 'La photo n’a pas pu être récupérée sur le serveur.');
+    const name = nomFichierPhoto(p, slot, i, liste.length);
+    const a = Object.assign(document.createElement('a'), { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    noms.push(name);
+    if (i < liste.length - 1) await new Promise((r) => setTimeout(r, 350)); // les navigateurs refusent parfois des téléchargements simultanés
+  }
+  toast(noms.length > 1 ? `${noms.length} images téléchargées.` : `${noms[0]} téléchargée.`);
 }
 
 /** Réduit la photo à 1600 px maximum et l'enregistre en JPEG : envoi rapide, fichier Excel raisonnable, rotation du téléphone appliquée. */
@@ -635,35 +712,57 @@ async function prepareImage(file) {
 
 function photoSlotHtml(p, slot) {
   const s = SLOTS[slot];
-  const has = Boolean(p.photos && p.photos[slot]);
   const visible = p.plateformes.some((n) => s.reseaux.includes(n));
   return `<div class="ph-slot" data-slot="${slot}"${visible ? '' : ' hidden'}>
-      <h4>${esc(s.titre)}</h4>
-      <div class="ph-box" data-box>${has ? zoomPhoto(`<img data-photo="${esc(p.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(s.titre)}">`, slot) : '<span>Aucune photo</span>'}</div>
+      <h4>${esc(s.titre)} <small class="ph-count" data-count></small></h4>
+      <div class="ph-box" data-box data-gal></div>
       <div class="ph-actions">
-        <button type="button" class="btn small" data-action="photo-pick" data-slot="${slot}">${icon('i-photo')}<span data-pick-label>${has ? 'Changer' : 'Ajouter'}</span></button>
-        ${boutonTelecharger(p.id, slot, !has)}
-        <button type="button" class="btn small danger" data-action="photo-remove" data-slot="${slot}"${has ? '' : ' hidden'}>Retirer</button>
+        <button type="button" class="btn small" data-action="photo-pick" data-slot="${slot}">${icon('i-photo')}<span data-pick-label>Ajouter des images</span></button>
+        ${boutonTelecharger(p.id, slot, true)}
       </div>
-      <input type="file" accept="image/*" data-photo-input="${slot}" hidden>
+      <input type="file" accept="image/*" multiple data-photo-input="${slot}" hidden>
       <p class="ph-err form-error" role="alert" hidden></p>
     </div>`;
 }
 
-// État des photos du tiroir : { meta|linkedin: { blob, url, remove } }, appliqué à l'enregistrement.
+// État des images du tiroir : { meta|linkedin: { items, base } }, appliqué à l'enregistrement.
+//  - items : la liste ordonnée voulue, avec des images déjà enregistrées ({ fichier }) et de nouvelles ({ blob, url }) ;
+//  - base : les fichiers enregistrés à l'ouverture du tiroir (pour ne retirer que ce que l'utilisateur a vraiment retiré).
 function photoSlotRefresh(form, slot) {
   const el = form.querySelector(`.ph-slot[data-slot=${slot}]`);
   const st = $('#drawer')._photos[slot];
-  const existing = postById(form.dataset.id);
-  const had = Boolean(existing && existing.photos && existing.photos[slot]) && !st.remove;
+  const id = form.dataset.id;
+  const n = st.items.length;
+  const titre = SLOTS[slot].titre;
   const box = el.querySelector('[data-box]');
-  if (st.blob) box.innerHTML = zoomPhoto(`<img src="${st.url}" alt="Nouvelle photo pour ${esc(SLOTS[slot].titre)}">`, slot);
-  else if (had) { box.innerHTML = zoomPhoto(`<img data-photo="${esc(existing.id)}" data-slot="${slot}" alt="Photo actuelle pour ${esc(SLOTS[slot].titre)}">`, slot); hydratePhotos(box); }
-  else box.innerHTML = '<span>Aucune photo</span>';
-  el.querySelector('[data-pick-label]').textContent = st.blob || had ? 'Changer' : 'Ajouter';
-  el.querySelector('[data-action=photo-remove]').hidden = !(st.blob || had);
-  // Seule la photo déjà enregistrée se télécharge (une photo qui vient d'être choisie est déjà sur l'appareil).
-  el.querySelector('[data-action=photo-download]').hidden = !had || Boolean(st.blob);
+  if (!n) {
+    box.className = 'ph-box';
+    box.innerHTML = '<span>Aucune image</span>';
+  } else {
+    box.className = 'ph-list';
+    box.innerHTML = st.items.map((it, i) => {
+      const img = it.blob
+        ? `<img src="${esc(it.url)}" alt="Nouvelle image pour ${esc(titre)}">`
+        : `<img data-photo="${esc(id)}" data-slot="${slot}" data-fichier="${esc(it.fichier)}" alt="Image enregistrée pour ${esc(titre)}">`;
+      return `<div class="ph-item" data-i="${i}">
+        <div class="ph-thumb">${zoomPhoto(img, slot, i + 1, n)}<span class="ph-num" aria-hidden="true">${i + 1}</span></div>
+        <div class="ph-tools" role="group" aria-label="Image ${i + 1} sur ${n}">
+          <button type="button" class="btn small" data-action="photo-move" data-slot="${slot}" data-i="${i}" data-dir="-1" aria-label="Avancer l’image ${i + 1} (la placer avant)"${i === 0 ? ' disabled' : ''}>←</button>
+          <button type="button" class="btn small" data-action="photo-move" data-slot="${slot}" data-i="${i}" data-dir="1" aria-label="Reculer l’image ${i + 1} (la placer après)"${i === n - 1 ? ' disabled' : ''}>→</button>
+          <button type="button" class="btn small danger" data-action="photo-remove" data-slot="${slot}" data-i="${i}" aria-label="Retirer l’image ${i + 1}">${icon('i-x')}</button>
+        </div></div>`;
+    }).join('');
+    hydratePhotos(box);
+  }
+  el.querySelector('[data-count]').textContent = n > 1 ? `(carrousel de ${n} images)` : n === 1 ? '(1 image)' : '';
+  el.querySelector('[data-pick-label]').textContent = n ? 'Ajouter d’autres images' : 'Ajouter des images';
+  el.querySelector('[data-action=photo-pick]').disabled = n >= PHOTOS_MAX;
+  // Seules les images déjà enregistrées se téléchargent (celles qui viennent d'être choisies sont déjà sur l'appareil).
+  const enregistrees = listePhotos(postById(id), slot).length;
+  const dl = el.querySelector('[data-action=photo-download]');
+  dl.hidden = !enregistrees;
+  dl.setAttribute('aria-label', libelleTelecharger(slot, enregistrees));
+  dl.querySelector('span').textContent = enregistrees > 1 ? `Télécharger les ${enregistrees} images` : 'Télécharger';
 }
 
 function photoSlotsSync(form) {
@@ -675,41 +774,98 @@ async function photoChosen(input) {
   const form = input.closest('form');
   const slot = input.dataset.photoInput;
   const err = form.querySelector(`.ph-slot[data-slot=${slot}] .ph-err`);
-  const file = input.files && input.files[0];
+  const files = [...(input.files || [])];
   input.value = '';
-  if (!file) return;
+  if (!files.length) return;
   err.hidden = true;
-  try {
-    const blob = await prepareImage(file);
-    const st = $('#drawer')._photos[slot];
-    if (st.url) URL.revokeObjectURL(st.url);
-    Object.assign(st, { blob, url: URL.createObjectURL(blob), remove: false });
-    $('#drawer')._dirty = true;
-    photoSlotRefresh(form, slot);
-  } catch (e) {
-    err.textContent = e.message;
+  const drawer = $('#drawer');
+  const st = drawer._photos[slot];
+  const places = Math.max(0, PHOTOS_MAX - st.items.length);
+  const messages = [];
+  if (files.length > places) {
+    const trop = files.length - places;
+    messages.push(`Maximum ${PHOTOS_MAX} images par visuel : ${trop} image${trop > 1 ? 's n’ont pas été ajoutées' : ' n’a pas été ajoutée'}.`);
+  }
+  let ajoutees = 0;
+  for (const file of files.slice(0, places)) {
+    try {
+      const blob = await prepareImage(file);
+      st.items.push({ blob, url: URL.createObjectURL(blob) });
+      ajoutees += 1;
+    } catch (e) {
+      messages.push(files.length > 1 ? `${file.name} : ${e.message}` : e.message);
+    }
+  }
+  if (!form.isConnected) return; // le tiroir a été fermé pendant la préparation des images
+  if (ajoutees) drawer._dirty = true;
+  photoSlotRefresh(form, slot);
+  if (messages.length) {
+    err.textContent = messages.join(' ');
     err.hidden = false;
   }
 }
 
-function photoRemoved(form, slot) {
+function photoRemoved(form, slot, i) {
   const st = $('#drawer')._photos[slot];
-  if (st.url) URL.revokeObjectURL(st.url);
-  Object.assign(st, { blob: null, url: '', remove: true });
+  const [retiree] = st.items.splice(i, 1);
+  if (retiree && retiree.url) URL.revokeObjectURL(retiree.url);
   $('#drawer')._dirty = true;
   photoSlotRefresh(form, slot);
+  const el = form.querySelector(`.ph-slot[data-slot=${slot}]`);
+  const suivant = el.querySelector(`.ph-item[data-i="${Math.min(i, st.items.length - 1)}"] [data-action=photo-remove]`);
+  (suivant || el.querySelector('[data-action=photo-pick]')).focus();
 }
 
-async function applyPhotos(id, photos, reseaux) {
+function photoMoved(form, slot, i, dir) {
+  const items = $('#drawer')._photos[slot].items;
+  const j = i + dir;
+  if (j < 0 || j >= items.length) return;
+  [items[i], items[j]] = [items[j], items[i]];
+  $('#drawer')._dirty = true;
+  photoSlotRefresh(form, slot);
+  // Le focus suit l'image déplacée, pour pouvoir continuer à la déplacer au clavier.
+  const el = form.querySelector(`.ph-slot[data-slot=${slot}] .ph-item[data-i="${j}"]`);
+  const bouton = el && (el.querySelector(`[data-action=photo-move][data-dir="${dir}"]:not(:disabled)`) || el.querySelector('[data-action=photo-move]:not(:disabled)'));
+  if (bouton) bouton.focus();
+}
+
+const messageErreur = async (res) => ((await res.json().catch(() => null)) || {}).error || `erreur ${res.status}`;
+
+/**
+ * Applique à l'enregistrement les changements d'images faits dans le tiroir : retire ce qui a été retiré, envoie les nouvelles
+ * images à la suite, puis remet le tout dans l'ordre choisi. `saved` est le post tel que le serveur vient de l'enregistrer.
+ */
+async function applyPhotos(id, photos, reseaux, saved) {
   for (const slot of Object.keys(SLOTS)) {
-    const st = photos[slot];
     if (!SLOTS[slot].reseaux.some((n) => reseaux.includes(n))) continue; // visuel masqué : on ne touche à rien
-    if (st.blob) {
-      const res = await request('PUT', `/api/posts/${id}/photo/${slot}`, st.blob);
-      if (!res.ok) throw new Error(((await res.json().catch(() => null)) || {}).error || `erreur ${res.status}`);
-    } else if (st.remove) {
-      await api('DELETE', `/api/posts/${id}/photo/${slot}`);
+    const { items, base } = photos[slot];
+    const route = `/api/posts/${id}/photo/${slot}`;
+    const gardees = new Set(items.filter((it) => it.fichier).map((it) => it.fichier));
+    let courant = listePhotos(saved, slot).map((f) => f.fichier); // ce que le serveur a à cet instant
+    // 1. Retirer les images que l'utilisateur a retirées, et seulement celles-là : une image ajoutée entre-temps ailleurs reste.
+    for (const f of base) {
+      if (gardees.has(f) || !courant.includes(f)) continue;
+      const res = await request('DELETE', `${route}/${encodeURIComponent(f)}`);
+      if (!res.ok && res.status !== 404) throw new Error(await messageErreur(res));
+      courant = courant.filter((x) => x !== f);
     }
+    // 2. Envoyer les nouvelles images, à la suite.
+    const voulu = [];
+    for (const it of items) {
+      if (it.fichier) {
+        if (courant.includes(it.fichier)) voulu.push(it.fichier);
+        continue;
+      }
+      const res = await request('POST', route, it.blob);
+      if (!res.ok) throw new Error(await messageErreur(res));
+      const liste = listePhotos(await res.json(), slot);
+      const nouvelle = liste[liste.length - 1].fichier;
+      courant.push(nouvelle);
+      voulu.push(nouvelle);
+    }
+    // 3. Remettre dans l'ordre choisi (une image ajoutée ailleurs entre-temps passe à la fin).
+    const ordre = [...voulu, ...courant.filter((f) => !voulu.includes(f))];
+    if (ordre.join('|') !== courant.join('|')) await api('PUT', `${route}/ordre`, { fichiers: ordre });
   }
 }
 
@@ -731,10 +887,11 @@ function render() {
 /* ---- pastille d’un post ---- */
 function chip(p) {
   const nets = p.plateformes.map(badgeReseau).join('');
-  const label = `${p.titre}, ${listeFr(p.plateformes)}, ${STATUTS[p.statut]}${hasPhoto(p) ? ', avec photo' : ''}`;
+  const nbImg = nbPhotos(p);
+  const label = `${p.titre}, ${listeFr(p.plateformes)}, ${STATUTS[p.statut]}${nbImg > 1 ? `, avec ${nbImg} images` : nbImg ? ', avec photo' : ''}`;
   return `<button type="button" class="chip s-${p.statut}" data-action="edit-post" data-id="${esc(p.id)}" title="${esc(p.titre)}" aria-label="${esc(label)}">
     ${icon(ICONES[p.statut])}<span class="ttl">${escBr(p.titre)}</span>
-    <span class="sub" aria-hidden="true">${p.heure ? `<span>${heureFr(p.heure)}</span>` : ''}${nets}${hasPhoto(p) ? `<span class="ph-ico" title="Photo jointe">${icon('i-photo')}</span>` : ''}</span></button>`;
+    <span class="sub" aria-hidden="true">${p.heure ? `<span>${heureFr(p.heure)}</span>` : ''}${nets}${nbImg ? `<span class="ph-ico" title="${nbImg > 1 ? `${nbImg} images jointes` : 'Photo jointe'}">${icon('i-photo')}${nbImg > 1 ? `<span class="ph-n">${nbImg}</span>` : ''}</span>` : ''}</span></button>`;
 }
 
 /* ---- calendrier ---- */
@@ -1034,9 +1191,9 @@ function postForm(p, isNew) {
         <label class="f"><span>Hashtags</span><input type="text" name="hashtags" data-hl value="${esc(p.hashtags)}" placeholder="#ESAT #Handicap"></label>
         <p class="count" id="count" aria-live="polite"></p>
         <label class="f"><span>Idée d’image</span><textarea name="imageIdee" data-hl rows="2" maxlength="1000">${esc(p.imageIdee)}</textarea></label>
-        <fieldset class="photos"><legend>Photo <em>facultative</em></legend>
+        <fieldset class="photos"><legend>Photos <em>facultatives</em></legend>
           <div class="ph-grid">${photoSlotHtml(p, 'meta')}${photoSlotHtml(p, 'linkedin')}</div>
-          <p class="hint">Instagram et Facebook utilisent la même photo. LinkedIn a la sienne. Seuls les réseaux cochés plus haut apparaissent ici.</p>
+          <p class="hint">Instagram et Facebook utilisent les mêmes images, LinkedIn a les siennes. Plusieurs images forment un carrousel : leurs numéros donnent l’ordre de publication, et les flèches ← → les déplacent. Seuls les réseaux cochés plus haut apparaissent ici.</p>
         </fieldset>
         <label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" data-hl maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>
         <label class="f"><span>Angle du post</span><textarea name="angle" data-hl rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>
@@ -1091,14 +1248,18 @@ function updateCount(form) {
 
 function openPost(id, defaults = {}) {
   const existing = id ? postById(id) : null;
-  const base = existing || { id: '', photos: { meta: null, linkedin: null }, titre: '', datePublication: defaults.date || (todayIso().startsWith(state.month) ? todayIso() : `${state.month}-01`), heure: '', plateformes: ['Instagram', 'Facebook'], eventId: defaults.eventId || '', description: '', hashtags: '', imageIdee: '', atelier: '', angle: '', vigilance: '', statut: 'idee' };
+  const base = existing || { id: '', photos: { meta: [], linkedin: [] }, titre: '', datePublication: defaults.date || (todayIso().startsWith(state.month) ? todayIso() : `${state.month}-01`), heure: '', plateformes: ['Instagram', 'Facebook'], eventId: defaults.eventId || '', description: '', hashtags: '', imageIdee: '', atelier: '', angle: '', vigilance: '', statut: 'idee' };
   const p = { ...base, eventId: base.eventId || '' };
   openDrawer(postForm(p, !existing));
-  $('#drawer')._photos = { meta: { blob: null, url: '', remove: false }, linkedin: { blob: null, url: '', remove: false } };
+  // Images du tiroir : on part de celles déjà enregistrées (dans l'ordre), l'utilisateur en ajoute, retire, déplace.
+  $('#drawer')._photos = Object.fromEntries(Object.keys(SLOTS).map((s) => {
+    const fichiers = listePhotos(existing, s).map((f) => f.fichier);
+    return [s, { items: fichiers.map((fichier) => ({ fichier })), base: fichiers }];
+  }));
   const form = $('#drawer form');
+  Object.keys(SLOTS).forEach((s) => photoSlotRefresh(form, s));
   updateCount(form);
   updatePlanifHint(form);
-  hydratePhotos($('#drawer'));
 }
 
 /* ================= tiroir : événement ================= */
@@ -1161,14 +1322,14 @@ async function submitForm(form) {
     const saved = id ? await api('PUT', `${base}/${id}`, payload) : await api('POST', base, payload);
     let photoErr = '';
     if (kind === 'post') {
-      try { await applyPhotos(saved.id, $('#drawer')._photos, payload.plateformes); } catch (e) { photoErr = e.message; }
+      try { await applyPhotos(saved.id, $('#drawer')._photos, payload.plateformes, saved); } catch (e) { photoErr = e.message; }
     }
     $('#drawer')._dirty = false;
     $('#drawer').close();
     await refresh();
     if (kind === 'post' && payload.datePublication) state.month = payload.datePublication.slice(0, 7);
     render();
-    if (photoErr) toast(`Post enregistré, mais la photo n’a pas pu être envoyée : ${photoErr}`, { error: true });
+    if (photoErr) toast(`Post enregistré, mais les images n’ont pas toutes pu être envoyées : ${photoErr}`, { error: true });
     else toast(kind === 'post' ? 'Post enregistré.' : 'Événement enregistré.');
   } catch (err) {
     formError(form, err.message);
@@ -1504,18 +1665,21 @@ function openFusionChoix(idA, idB) {
     repris.push({ label: 'Statut', texte: STATUTS[a.statut], source: '' });
   }
 
-  // Photo Instagram + Facebook : un seul visuel pour les deux réseaux.
-  const phA = a.photos && a.photos.meta;
-  const phB = b.photos && b.photos.meta;
+  // Images Instagram + Facebook : un seul visuel (une photo ou un carrousel) pour les deux réseaux.
+  const phA = listePhotos(a, 'meta');
+  const phB = listePhotos(b, 'meta');
+  const conflitPhoto = phA.length > 0 && phB.length > 0;
+  const libImages = (n) => (n > 1 ? `carrousel de ${n} images` : '1 photo');
   let photoHtml = '';
-  if (phA && phB) {
-    const imgOpt = (p, who, i) => `<label class="mg-opt"><input type="radio" name="c-photo" value="${esc(p.id)}"${i === 0 ? ' checked' : ''}><span class="mg-box"><span class="mg-who">${esc(who)}</span><img class="mg-img" data-photo="${esc(p.id)}" data-slot="meta" alt="Photo du ${esc(who.toLowerCase())}"></span></label>`;
-    photoHtml = `<fieldset class="mg-field"><legend>Photo Instagram + Facebook</legend><div class="mg-trio">${imgOpt(a, nomA, 0)}${imgOpt(b, nomB, 1)}<label class="mg-opt"><input type="radio" name="c-photo" value="aucune"><span class="mg-box"><span class="mg-who">Sans photo</span>Ne garder aucune photo</span></label></div></fieldset>`;
-  } else if (phA || phB) {
-    repris.push({ label: 'Photo Instagram + Facebook', texte: 'photo jointe', source: phA ? nomA : nomB });
+  if (conflitPhoto) {
+    const imgOpt = (p, liste, who, i) => `<label class="mg-opt"><input type="radio" name="c-photo" value="${esc(p.id)}"${i === 0 ? ' checked' : ''}><span class="mg-box"><span class="mg-who">${esc(who)} : ${libImages(liste.length)}</span><span class="mg-imgs${liste.length === 1 ? ' un' : ''}">${liste.slice(0, 6).map((f, k) => `<img class="mg-img" data-photo="${esc(p.id)}" data-slot="meta" data-fichier="${esc(f.fichier)}" alt="Image ${k + 1} du ${esc(who.toLowerCase())}">`).join('')}</span>${liste.length > 6 ? `<small>et ${liste.length - 6} autres images</small>` : ''}</span></label>`;
+    photoHtml = `<fieldset class="mg-field"><legend>Images Instagram + Facebook</legend><div class="mg-trio">${imgOpt(a, phA, nomA, 0)}${imgOpt(b, phB, nomB, 1)}<label class="mg-opt"><input type="radio" name="c-photo" value="aucune"><span class="mg-box"><span class="mg-who">Sans image</span>Ne garder aucune image</span></label></div></fieldset>`;
+  } else if (phA.length || phB.length) {
+    const liste = phA.length ? phA : phB;
+    repris.push({ label: 'Images Instagram + Facebook', texte: libImages(liste.length) + ' jointe' + (liste.length > 1 ? 's' : ''), source: phA.length ? nomA : nomB });
   }
 
-  const nbChoix = conflits.length + (statutDiff ? 1 : 0) + (phA && phB ? 1 : 0);
+  const nbChoix = conflits.length + (statutDiff ? 1 : 0) + (conflitPhoto ? 1 : 0);
   const reprisHtml = repris.length
     ? `<div class="blk mg-auto"><h3>Repris automatiquement</h3><dl>${repris.map((r) => `<div><dt>${esc(r.label)}</dt><dd>${esc(titreCourt(r.texte, 140))}${r.source ? ` <small>(${esc(r.source)})</small>` : ''}</dd></div>`).join('')}</dl></div>`
     : '';
@@ -1533,7 +1697,7 @@ function openFusionChoix(idA, idB) {
     const choix = {};
     for (const [cle] of conflits) choix[cle] = fd.get(`c-${cle}`);
     if (statutDiff && fd.get('c-statut') !== 'idee') choix.statut = fd.get('c-statut');
-    if (phA && phB) choix.photo = fd.get('c-photo');
+    if (conflitPhoto) choix.photo = fd.get('c-photo');
     soumettreAction(form, async () => {
       const res = await api('POST', '/api/posts/fusionner', { ids: [idA, idB], garder: idA, choix });
       await actionTerminee();
@@ -1631,7 +1795,10 @@ document.addEventListener('click', (e) => {
     }
     case 'set-statut': guard(() => setStatut(d.id, d.statut)); break;
     case 'photo-pick': t.closest('.ph-slot').querySelector('input[type=file]').click(); break;
-    case 'photo-remove': photoRemoved(t.closest('form'), d.slot); break;
+    case 'photo-remove': photoRemoved(t.closest('form'), d.slot, Number(d.i)); break;
+    case 'photo-move': photoMoved(t.closest('form'), d.slot, Number(d.i), Number(d.dir)); break;
+    case 'photo-prev': lightboxStep(-1); break;
+    case 'photo-next': lightboxStep(1); break;
     case 'photo-download': guard(() => downloadPhoto(d.id, d.slot)); break;
     case 'photo-zoom': ouvrirPhoto(t.querySelector('img')); break;
     case 'open-export': openExport(); break;
@@ -1694,8 +1861,21 @@ $('#drawer').addEventListener('cancel', (e) => {
 });
 $('#tokenDlg').addEventListener('cancel', (e) => e.preventDefault());
 for (const id of ['drawer', 'exportDlg', 'tokenDlg', 'actionDlg', 'photoDlg']) {
-  $(`#${id}`).addEventListener('close', (e) => { e.target.innerHTML = ''; e.target._dirty = false; });
+  $(`#${id}`).addEventListener('close', (e) => {
+    const dlg = e.target;
+    // Libère les aperçus des images choisies mais pas enregistrées.
+    if (dlg._photos) Object.values(dlg._photos).forEach((st) => st.items.forEach((it) => { if (it.url) URL.revokeObjectURL(it.url); }));
+    dlg._photos = null;
+    dlg.innerHTML = '';
+    dlg._dirty = false;
+  });
 }
+
+// Image agrandie : flèches gauche/droite du clavier pour parcourir un carrousel.
+$('#photoDlg').addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') { e.preventDefault(); lightboxStep(-1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); lightboxStep(1); }
+});
 
 /* ================= démarrage ================= */
 const poll = () => {

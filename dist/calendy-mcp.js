@@ -43558,7 +43558,7 @@ Tu proposes des id\xE9es de posts ; c'est l'utilisateur qui d\xE9cide lesquels s
 - Planifier : le statut \xAB planifie \xBB signifie valid\xE9 et programm\xE9. Calendy passe lui-m\xEAme le post en \xAB publie \xBB d\xE8s que sa date (et son heure, si elle est renseign\xE9e) est atteinte ; sans heure, d\xE8s le matin du jour pr\xE9vu. Calendy ne publie rien sur les r\xE9seaux, il met seulement le statut \xE0 jour. Un post dont la date est d\xE9j\xE0 pass\xE9e ne peut pas \xEAtre planifi\xE9 : propose-lui \xAB publie \xBB ou une nouvelle date (deplacer_post).
 - description = l\xE9gende pr\xEAte \xE0 publier, sans hashtags ; hashtags \xE0 part ; imageIdee = description de la photo \xE0 pr\xE9voir.
 - D\xE9placer (deplacer_post), cloner (cloner_post) et fusionner (fusionner_posts) des posts : seulement sur demande de l'utilisateur. Une copie est toujours \xAB idee \xBB. Avant de fusionner deux posts qui diff\xE8rent, montre-lui les deux textes et demande lequel garder : le post \xE9cart\xE9 est supprim\xE9.
-- Photos : facultatives, une par visuel (Instagram + Facebook partagent la m\xEAme, LinkedIn a la sienne). Tu ne cr\xE9es pas d'image : tu ne joins une photo (ajouter_photo) que si l'utilisateur t'indique le fichier sur son ordinateur. telecharger_photo enregistre sur cet ordinateur les photos d\xE9j\xE0 jointes \xE0 un post.
+- Images : facultatives. Chaque visuel (Instagram + Facebook partagent les m\xEAmes, LinkedIn a les siennes) peut avoir plusieurs images, dans un ordre pr\xE9cis : c'est un carrousel (20 images au maximum par visuel). Tu ne cr\xE9es pas d'image : tu n'en joins une (ajouter_photo, une fois par image, dans l'ordre voulu) que si l'utilisateur t'indique le fichier sur son ordinateur. retirer_photo retire une image (numero) ou tout le visuel (toutes). telecharger_photo enregistre sur cet ordinateur les images d\xE9j\xE0 jointes \xE0 un post.
 - Sujets sensibles (sant\xE9 mentale, handicap psychique) : message centr\xE9 sur le travail et la fiert\xE9 collective, jamais de diagnostic ni de personne identifiable, et mets un point de vigilance qui demande une validation avant publication. Ne nomme pas une entreprise partenaire sans son accord.`;
 var server = new McpServer({ name: "calendy", version: "1.0.0" }, { instructions: INSTRUCTIONS });
 var lecture = { readOnlyHint: true, openWorldHint: false };
@@ -43707,7 +43707,7 @@ server.registerTool(
         angle: choixFusion.optional(),
         vigilance: choixFusion.optional(),
         statut: choixFusion.optional(),
-        photo: z.string().optional().describe("Photo Instagram + Facebook : identifiant du post dont on garde la photo, ou \xAB aucune \xBB.")
+        photo: z.string().optional().describe("Images Instagram + Facebook : identifiant du post dont on garde toutes les images (carrousel entier, jamais m\xE9lang\xE9 avec l'autre), ou \xAB aucune \xBB.")
       }).optional().describe("Champs pour lesquels on ne veut pas la valeur par d\xE9faut.")
     },
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
@@ -43718,20 +43718,25 @@ server.registerTool(
   })
 );
 var VISUELS = { instagram_facebook: "meta", linkedin: "linkedin" };
-var visuelSchema = z.enum(["instagram_facebook", "linkedin"]).describe("instagram_facebook = la photo commune \xE0 Instagram et Facebook ; linkedin = la photo de LinkedIn.");
+var visuelSchema = z.enum(["instagram_facebook", "linkedin"]).describe("instagram_facebook = les images communes \xE0 Instagram et Facebook ; linkedin = les images de LinkedIn.");
+function imagesDe(post, slot) {
+  const v = post.photos && post.photos[slot];
+  return Array.isArray(v) ? v : v ? [v] : [];
+}
 server.registerTool(
   "ajouter_photo",
   {
-    title: "Ajouter ou remplacer la photo d\u2019un post",
-    description: "Joint une photo (JPEG ou PNG, 8 Mo maximum) \xE0 un post, \xE0 partir d'un fichier de cet ordinateur. Une photo par visuel : une pour Instagram + Facebook, une pour LinkedIn. Remplace la photo existante du m\xEAme visuel. Les photos sont facultatives. \xC0 n'utiliser que si l'utilisateur indique le fichier \xE0 utiliser.",
+    title: "Ajouter une image \xE0 un post",
+    description: "Joint une image (JPEG ou PNG, 8 Mo maximum) \xE0 un post, \xE0 partir d'un fichier de cet ordinateur. Un visuel (Instagram + Facebook, ou LinkedIn) peut avoir plusieurs images, 20 au maximum : un carrousel. Par d\xE9faut l'image est ajout\xE9e \xE0 la fin ; pour un carrousel, appelle l'outil une fois par image, dans l'ordre voulu. Avec remplacer: true, elle prend la place de toutes les images du visuel. Les images sont facultatives. \xC0 n'utiliser que si l'utilisateur indique le fichier \xE0 utiliser.",
     inputSchema: {
       id: z.string().describe("Identifiant du post."),
       visuel: visuelSchema,
-      chemin: z.string().describe("Chemin complet du fichier image sur cet ordinateur (.jpg, .jpeg ou .png).")
+      chemin: z.string().describe("Chemin complet du fichier image sur cet ordinateur (.jpg, .jpeg ou .png)."),
+      remplacer: z.boolean().optional().describe("true : remplace toutes les images du visuel par celle-ci. Par d\xE9faut : false (l\u2019image est ajout\xE9e \xE0 la suite).")
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   },
-  safe(async ({ id, visuel, chemin }) => {
+  safe(async ({ id, visuel, chemin, remplacer }) => {
     const ext = path.extname(chemin).toLowerCase();
     const type = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png" }[ext];
     if (!type) throw new Error("Format non pris en charge : utilise un fichier .jpg, .jpeg ou .png.");
@@ -43741,33 +43746,54 @@ server.registerTool(
     } catch {
       throw new Error(`Fichier introuvable ou illisible : ${chemin}`);
     }
-    const post = await call("PUT", `/api/posts/${encodeURIComponent(id)}/photo/${VISUELS[visuel]}`, buf, { contentType: type });
+    const base = `/api/posts/${encodeURIComponent(id)}/photo/${VISUELS[visuel]}`;
+    const post = await call(remplacer ? "PUT" : "POST", base, buf, { contentType: type });
     return ok({ id: post.id, titre: post.titre, photos: post.photos });
   })
 );
 server.registerTool(
   "retirer_photo",
   {
-    title: "Retirer la photo d\u2019un post",
-    description: "Retire la photo d'un visuel (Instagram + Facebook, ou LinkedIn) d'un post. Le post lui-m\xEAme est conserv\xE9. Sur demande de l'utilisateur uniquement.",
-    inputSchema: { id: z.string().describe("Identifiant du post."), visuel: visuelSchema },
+    title: "Retirer une image d\u2019un post",
+    description: "Retire une image d'un post. Un visuel (Instagram + Facebook, ou LinkedIn) peut en avoir plusieurs : pr\xE9cise `numero` (position de l'image \xE0 partir de 1, dans l'ordre de lire_post) pour n'en retirer qu'une, ou `toutes: true` pour vider le visuel. Sans l'un ni l'autre, l'image n'est retir\xE9e que si le visuel n'en a qu'une. Le post lui-m\xEAme est conserv\xE9. Sur demande de l'utilisateur uniquement.",
+    inputSchema: {
+      id: z.string().describe("Identifiant du post."),
+      visuel: visuelSchema,
+      numero: z.number().int().min(1).optional().describe("Position (\xE0 partir de 1) de l\u2019image \xE0 retirer, dans l\u2019ordre du carrousel."),
+      toutes: z.boolean().optional().describe("true : retire toutes les images du visuel.")
+    },
     annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false }
   },
-  safe(async ({ id, visuel }) => {
-    const post = await call("DELETE", `/api/posts/${encodeURIComponent(id)}/photo/${VISUELS[visuel]}`);
+  safe(async ({ id, visuel, numero, toutes }) => {
+    if (numero !== void 0 && toutes) throw new Error("Choisis numero ou toutes, pas les deux.");
+    const route = `/api/posts/${encodeURIComponent(id)}`;
+    const liste = imagesDe(await call("GET", route), VISUELS[visuel]);
+    const base = `${route}/photo/${VISUELS[visuel]}`;
+    let post;
+    if (numero !== void 0) {
+      if (numero > liste.length) {
+        throw new Error(liste.length ? `Ce visuel n'a que ${liste.length} image(s) : numero doit \xEAtre compris entre 1 et ${liste.length}.` : "Ce visuel n'a aucune image.");
+      }
+      post = await call("DELETE", `${base}/${encodeURIComponent(liste[numero - 1].fichier)}`);
+    } else {
+      if (liste.length > 1 && !toutes) {
+        throw new Error(`Ce visuel a ${liste.length} images : pr\xE9cise numero (de 1 \xE0 ${liste.length}) pour en retirer une, ou toutes: true pour les retirer toutes.`);
+      }
+      post = await call("DELETE", base);
+    }
     return ok({ id: post.id, titre: post.titre, photos: post.photos });
   })
 );
-function nomFichierPhoto(post, slot) {
+function nomFichierPhoto(post, slot, image, numero, total) {
   const slug = String(post.titre || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60).replace(/^-+|-+$/g, "") || "post";
-  const ext = post.photos[slot].type === "image/png" ? "png" : "jpg";
-  return `${post.datePublication}_${slug}_${slot === "meta" ? "instagram-facebook" : "linkedin"}.${ext}`;
+  const ext = image.type === "image/png" ? "png" : "jpg";
+  return `${post.datePublication}_${slug}_${slot === "meta" ? "instagram-facebook" : "linkedin"}${total > 1 ? `_${numero}` : ""}.${ext}`;
 }
 server.registerTool(
   "telecharger_photo",
   {
-    title: "T\xE9l\xE9charger les photos d\u2019un post",
-    description: "Enregistre sur cet ordinateur la ou les photos jointes \xE0 un post (Instagram + Facebook, LinkedIn), telles qu'elles sont stock\xE9es dans Calendy. Sans visuel pr\xE9cis\xE9, toutes les photos du post sont enregistr\xE9es. Renvoie le chemin des fichiers.",
+    title: "T\xE9l\xE9charger les images d\u2019un post",
+    description: "Enregistre sur cet ordinateur les images jointes \xE0 un post (Instagram + Facebook, LinkedIn), telles qu'elles sont stock\xE9es dans Calendy. Pour un carrousel, toutes les images du visuel sont enregistr\xE9es, num\xE9rot\xE9es dans l'ordre (_1, _2\u2026). Sans visuel pr\xE9cis\xE9, tous les visuels du post sont enregistr\xE9s. Renvoie le chemin des fichiers.",
     inputSchema: {
       id: z.string().describe("Identifiant du post."),
       visuel: visuelSchema.optional(),
@@ -43777,18 +43803,21 @@ server.registerTool(
   },
   safe(async ({ id, visuel, dossier }) => {
     const post = await call("GET", `/api/posts/${encodeURIComponent(id)}`);
-    const slots = (visuel ? [VISUELS[visuel]] : Object.values(VISUELS)).filter((s) => post.photos && post.photos[s]);
+    const slots = (visuel ? [VISUELS[visuel]] : Object.values(VISUELS)).filter((s) => imagesDe(post, s).length);
     if (!slots.length) throw new Error(visuel ? `Ce post n'a pas de photo pour le visuel ${visuel}.` : "Ce post n'a aucune photo jointe.");
     const dir = path.resolve(dossier || process.env.CALENDY_EXPORT_DIR || path.join(os.homedir(), "Downloads"));
     fs.mkdirSync(dir, { recursive: true });
     const fichiers = [];
     for (const slot of slots) {
-      const res = await call("GET", `/api/posts/${encodeURIComponent(id)}/photo/${slot}`, void 0, { raw: true });
-      const nom = nomFichierPhoto(post, slot);
-      let cible = path.join(dir, nom);
-      for (let i = 2; fs.existsSync(cible); i += 1) cible = path.join(dir, nom.replace(/(\.\w+)$/, `_${i}$1`));
-      fs.writeFileSync(cible, Buffer.from(await res.arrayBuffer()));
-      fichiers.push(cible);
+      const images = imagesDe(post, slot);
+      for (const [i, image] of images.entries()) {
+        const res = await call("GET", `/api/posts/${encodeURIComponent(id)}/photo/${slot}/${encodeURIComponent(image.fichier)}`, void 0, { raw: true });
+        const nom = nomFichierPhoto(post, slot, image, i + 1, images.length);
+        let cible = path.join(dir, nom);
+        for (let n = 2; fs.existsSync(cible); n += 1) cible = path.join(dir, nom.replace(/(\.\w+)$/, `_${n}$1`));
+        fs.writeFileSync(cible, Buffer.from(await res.arrayBuffer()));
+        fichiers.push(cible);
+      }
     }
     return ok({ id: post.id, titre: post.titre, fichiers });
   })

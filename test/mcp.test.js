@@ -19,6 +19,10 @@ let client;
 let dataDir;
 let exportDir;
 
+// Petites images réelles (JPEG et PNG, 40×30) pour les tests de photos.
+const JPEG_BASE64 = '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAeACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDnKKKK6T2wooooAKKKKACiiigAooooAKKKKAP/2Q==';
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAAO0lEQVR4Xu3QUQ0AMAyE0K5Kam12pnqpCe6HZ4CE8+ZWQieiyzDG1RhXY1yNcTXG1RhXY1yNcTUmtvoDgI8BR1lq6aUAAAAASUVORK5CYII=';
+
 const texte = (res) => res.content[0].text;
 const donnees = (res) => JSON.parse(texte(res));
 const appel = (name, args = {}) => client.callTool({ name, arguments: args });
@@ -157,15 +161,16 @@ test('événements : création, lien avec un post, modification, suppression', a
   assert.equal(donnees(await appel('lire_post', { id: post.id })).eventId, null);
 });
 
-test('ajouter_photo et retirer_photo : une photo par visuel, à partir d’un fichier local', async () => {
+test('ajouter_photo et retirer_photo : images d’un visuel, à partir d’un fichier local', async () => {
   const jpg = path.join(exportDir, 'photo.jpg');
-  fs.writeFileSync(jpg, Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAeACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDnKKKK6T2wooooAKKKKACiiigAooooAKKKKAP/2Q==', 'base64'));
+  fs.writeFileSync(jpg, Buffer.from(JPEG_BASE64, 'base64'));
   const post = donnees(await appel('creer_post', { titre: 'Post MCP photo', datePublication: '2026-11-12', plateformes: ['Instagram', 'LinkedIn'] }));
   const ajoute = donnees(await appel('ajouter_photo', { id: post.id, visuel: 'instagram_facebook', chemin: jpg }));
-  assert.equal(ajoute.photos.meta.type, 'image/jpeg');
-  assert.equal(ajoute.photos.linkedin, null);
+  assert.equal(ajoute.photos.meta.length, 1);
+  assert.equal(ajoute.photos.meta[0].type, 'image/jpeg');
+  assert.deepEqual(ajoute.photos.linkedin, []);
   const lu = donnees(await appel('lire_post', { id: post.id }));
-  assert.ok(lu.photos.meta, 'la photo apparaît dans lire_post');
+  assert.equal(lu.photos.meta.length, 1, 'la photo apparaît dans lire_post');
 
   const mauvais = await appel('ajouter_photo', { id: post.id, visuel: 'linkedin', chemin: path.join(exportDir, 'absent.jpg') });
   assert.equal(mauvais.isError, true);
@@ -189,8 +194,63 @@ test('ajouter_photo et retirer_photo : une photo par visuel, à partir d’un fi
   assert.match(texte(sansPhoto), /pas de photo/);
 
   const retire = donnees(await appel('retirer_photo', { id: post.id, visuel: 'instagram_facebook' }));
-  assert.equal(retire.photos.meta, null);
+  assert.deepEqual(retire.photos.meta, [], 'une seule image : retirée sans autre précision');
   await appel('supprimer_post', { id: post.id });
+});
+
+test('carrousel : ajouter_photo à la suite, retirer_photo par numéro, telecharger_photo numérotées', async () => {
+  const jpg = path.join(exportDir, 'carrousel.jpg');
+  const png = path.join(exportDir, 'carrousel.png');
+  fs.writeFileSync(jpg, Buffer.from(JPEG_BASE64, 'base64'));
+  fs.writeFileSync(png, Buffer.from(PNG_BASE64, 'base64'));
+  const post = donnees(await appel('creer_post', { titre: 'Post MCP carrousel', datePublication: '2026-11-13', plateformes: ['Instagram', 'Facebook'] }));
+  const visuel = 'instagram_facebook';
+  try {
+    // Chaque appel ajoute une image à la suite, dans l'ordre
+    donnees(await appel('ajouter_photo', { id: post.id, visuel, chemin: jpg }));
+    donnees(await appel('ajouter_photo', { id: post.id, visuel, chemin: png }));
+    const trois = donnees(await appel('ajouter_photo', { id: post.id, visuel, chemin: jpg }));
+    assert.deepEqual(trois.photos.meta.map((f) => f.type), ['image/jpeg', 'image/png', 'image/jpeg']);
+    assert.deepEqual(trois.photos.linkedin, []);
+
+    // Téléchargement : toutes les images, numérotées dans l'ordre, identiques aux fichiers d'origine
+    const dossier = path.join(exportDir, 'telechargement-carrousel');
+    const telecharge = donnees(await appel('telecharger_photo', { id: post.id, dossier }));
+    assert.deepEqual(
+      telecharge.fichiers.map((f) => path.basename(f)),
+      [
+        '2026-11-13_post-mcp-carrousel_instagram-facebook_1.jpg',
+        '2026-11-13_post-mcp-carrousel_instagram-facebook_2.png',
+        '2026-11-13_post-mcp-carrousel_instagram-facebook_3.jpg',
+      ],
+    );
+    assert.deepEqual(fs.readFileSync(telecharge.fichiers[1]), fs.readFileSync(png), 'la 2e image est bien le PNG');
+
+    // Retirer : sans précision, refusé quand il y a plusieurs images (rien n'est supprimé par erreur)
+    const ambigu = await appel('retirer_photo', { id: post.id, visuel });
+    assert.equal(ambigu.isError, true);
+    assert.match(texte(ambigu), /3 images/);
+    assert.match(texte(ambigu), /numero/);
+    assert.equal((await appel('retirer_photo', { id: post.id, visuel, numero: 4 })).isError, true, 'numéro hors du carrousel');
+    assert.equal((await appel('retirer_photo', { id: post.id, visuel, numero: 1, toutes: true })).isError, true, 'numero et toutes ensemble');
+    assert.equal(donnees(await appel('lire_post', { id: post.id })).photos.meta.length, 3, 'les refus ne retirent rien');
+
+    // Retirer l'image numéro 2 (le PNG) : les deux JPEG restent, dans l'ordre
+    const apres = donnees(await appel('retirer_photo', { id: post.id, visuel, numero: 2 }));
+    assert.deepEqual(apres.photos.meta.map((f) => f.type), ['image/jpeg', 'image/jpeg']);
+
+    // Remplacer : une seule image prend la place de tout le carrousel
+    const remplace = donnees(await appel('ajouter_photo', { id: post.id, visuel, chemin: png, remplacer: true }));
+    assert.deepEqual(remplace.photos.meta.map((f) => f.type), ['image/png']);
+
+    // Tout vider d'un coup
+    donnees(await appel('ajouter_photo', { id: post.id, visuel, chemin: jpg }));
+    const vide = donnees(await appel('retirer_photo', { id: post.id, visuel, toutes: true }));
+    assert.deepEqual(vide.photos.meta, []);
+    assert.equal((await appel('retirer_photo', { id: post.id, visuel, numero: 1 })).isError, true, 'visuel vide : numéro refusé');
+  } finally {
+    await appel('supprimer_post', { id: post.id });
+  }
 });
 
 test('erreurs : messages clairs plutôt que des plantages', async () => {

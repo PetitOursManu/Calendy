@@ -157,9 +157,11 @@ function statut(value) {
 /* Photos                                                             */
 /* ------------------------------------------------------------------ */
 
-// Une photo facultative par « visuel » : Instagram et Facebook partagent la même, LinkedIn a la sienne.
+// Des images facultatives par « visuel » : Instagram et Facebook partagent les mêmes, LinkedIn a les siennes.
+// Chaque visuel est une liste ordonnée (une seule image = un post classique, plusieurs = un carrousel).
 const PHOTO_SLOTS = ['meta', 'linkedin'];
 const PHOTO_MAX = 8 * 1024 * 1024;
+const PHOTOS_PAR_VISUEL = 20;
 
 /** Reconnaît un JPEG ou un PNG d'après son contenu (pas d'après ce que dit le client) et lit ses dimensions. */
 function lireImage(buf) {
@@ -182,18 +184,43 @@ function lireImage(buf) {
   return null;
 }
 
-const photosVides = () => ({ meta: null, linkedin: null });
+const photosVides = () => ({ meta: [], linkedin: [] });
 
+/**
+ * Ramène les photos d'un post à la forme { meta: [...], linkedin: [...] }.
+ * Les anciennes données ne gardaient qu'une photo par visuel (un objet, ou null) : elle devient une liste d'une image.
+ */
 function normaliserPhotos(photos) {
   const out = photosVides();
   for (const slot of PHOTO_SLOTS) {
-    const f = photos && photos[slot];
-    if (f && typeof f.fichier === 'string' && /^[\w.-]+$/.test(f.fichier)) out[slot] = f;
+    const brut = photos && photos[slot];
+    const liste = Array.isArray(brut) ? brut : brut ? [brut] : [];
+    const vus = new Set();
+    for (const f of liste) {
+      if (f && typeof f.fichier === 'string' && /^[\w.-]+$/.test(f.fichier) && !vus.has(f.fichier)) {
+        vus.add(f.fichier);
+        out[slot].push(f);
+      }
+    }
   }
   return out;
 }
 
+/** Toutes les images d'un post, tous visuels confondus. */
+const toutesLesPhotos = (photos) => {
+  const p = normaliserPhotos(photos);
+  return PHOTO_SLOTS.flatMap((slot) => p[slot]);
+};
+
 const cheminPhoto = (fichier) => path.join(IMAGES_DIR, path.basename(fichier));
+
+function nomFichierUnique(id, slot, ext) {
+  let fichier;
+  do {
+    fichier = `${id}-${slot}-${crypto.randomBytes(3).toString('hex')}.${ext}`;
+  } while (fs.existsSync(cheminPhoto(fichier)));
+  return fichier;
+}
 
 function supprimerFichierPhoto(photo) {
   if (!photo) return;
@@ -223,7 +250,11 @@ function lireCorpsBrut(req, max) {
   });
 }
 
-async function enregistrerPhoto(req, id, slot) {
+/**
+ * Enregistre une image envoyée en corps brut. Par défaut elle est ajoutée à la fin des images du visuel (carrousel) ;
+ * avec `remplacer`, elle prend la place de toutes les images du visuel.
+ */
+async function enregistrerPhoto(req, id, slot, { remplacer = false } = {}) {
   const type = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
   if (type !== 'image/jpeg' && type !== 'image/png') {
     throw new HttpError(415, 'Content-Type image/jpeg ou image/png requis.');
@@ -236,16 +267,20 @@ async function enregistrerPhoto(req, id, slot) {
   }
   const post = db.posts.find((p) => p.id === id);
   if (!post) throw new HttpError(404, 'Post introuvable.');
+  post.photos = normaliserPhotos(post.photos);
+  if (!remplacer && post.photos[slot].length >= PHOTOS_PAR_VISUEL) {
+    throw new HttpError(400, `Maximum ${PHOTOS_PAR_VISUEL} images par visuel : retire-en une avant d’en ajouter une autre.`);
+  }
   fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  const fichier = `${id}-${slot}-${crypto.randomBytes(3).toString('hex')}.${info.ext}`;
+  const fichier = nomFichierUnique(id, slot, info.ext);
   const tmp = `${cheminPhoto(fichier)}.tmp`;
   fs.writeFileSync(tmp, buf);
   fs.renameSync(tmp, cheminPhoto(fichier));
-  post.photos = normaliserPhotos(post.photos);
-  const ancienne = post.photos[slot];
-  post.photos[slot] = { fichier, type: info.type, largeur: info.largeur, hauteur: info.hauteur, octets: buf.length };
+  const anciennes = post.photos[slot];
+  const nouvelle = { fichier, type: info.type, largeur: info.largeur, hauteur: info.hauteur, octets: buf.length };
+  post.photos[slot] = remplacer ? [nouvelle] : [...anciennes, nouvelle];
   saveDb();
-  supprimerFichierPhoto(ancienne);
+  if (remplacer) anciennes.forEach(supprimerFichierPhoto);
   return post;
 }
 
@@ -428,16 +463,16 @@ function copierPhotos(photos, idClone) {
   const crees = [];
   const source = normaliserPhotos(photos);
   for (const slot of PHOTO_SLOTS) {
-    const f = source[slot];
-    if (!f) continue;
-    const fichier = `${idClone}-${slot}-${crypto.randomBytes(3).toString('hex')}${path.extname(f.fichier) || '.jpg'}`;
-    try {
-      fs.copyFileSync(cheminPhoto(f.fichier), cheminPhoto(fichier));
-    } catch {
-      continue; // fichier d'origine absent : le clone n'a simplement pas cette photo
+    for (const f of source[slot]) {
+      const fichier = nomFichierUnique(idClone, slot, (path.extname(f.fichier) || '.jpg').slice(1));
+      try {
+        fs.copyFileSync(cheminPhoto(f.fichier), cheminPhoto(fichier));
+      } catch {
+        continue; // fichier d'origine absent : le clone n'a simplement pas cette image
+      }
+      out[slot].push({ ...f, fichier });
+      crees.push(fichier);
     }
-    out[slot] = { ...f, fichier };
-    crees.push(fichier);
   }
   return { photos: out, crees };
 }
@@ -477,7 +512,8 @@ const estVide = (v) => v === undefined || v === null || v === '';
  * Fusionne deux posts qui n'ont aucun réseau en commun (typiquement un Instagram et un Facebook) en un seul,
  * prévu sur l'union de leurs réseaux. Le post `garder` (le premier par défaut) conserve son identifiant, l'autre est supprimé.
  * Pour chaque champ, `choix[champ]` désigne le post dont on prend la valeur ; sans choix, on prend celle du post gardé,
- * ou celle de l'autre quand le post gardé n'a rien. `choix.photo` règle la photo Instagram + Facebook (id d'un post, ou « aucune »).
+ * ou celle de l'autre quand le post gardé n'a rien. `choix.photo` règle les images Instagram + Facebook : l'ensemble des images
+ * du post indiqué (son id), ou « aucune ». Les images de deux posts ne sont jamais mélangées.
  * Si les statuts diffèrent et qu'aucun n'est choisi, le post fusionné repart en « idée à valider ».
  */
 function fusionnerPosts(body) {
@@ -520,14 +556,14 @@ function fusionnerPosts(body) {
   const pb = normaliserPhotos(base.photos);
   const pa = normaliserPhotos(autre.photos);
   const photos = photosVides();
-  if (has(choix, 'photo')) photos.meta = choix.photo === 'aucune' ? null : normaliserPhotos(parId(choix.photo).photos).meta;
-  else photos.meta = pb.meta || pa.meta;
-  photos.linkedin = pb.linkedin || pa.linkedin;
+  if (has(choix, 'photo')) photos.meta = choix.photo === 'aucune' ? [] : normaliserPhotos(parId(choix.photo).photos).meta;
+  else photos.meta = pb.meta.length ? pb.meta : pa.meta;
+  photos.linkedin = pb.linkedin.length ? pb.linkedin : pa.linkedin;
   fusion.photos = photos;
 
   // Les fichiers photo qui ne servent plus à personne sont supprimés une fois les données enregistrées.
-  const gardes = new Set(PHOTO_SLOTS.map((s) => photos[s] && photos[s].fichier).filter(Boolean));
-  const aSupprimer = [pb, pa].flatMap((ph) => PHOTO_SLOTS.map((s) => ph[s])).filter((f) => f && !gardes.has(f.fichier));
+  const gardes = new Set(toutesLesPhotos(photos).map((f) => f.fichier));
+  const aSupprimer = [...toutesLesPhotos(pb), ...toutesLesPhotos(pa)].filter((f) => !gardes.has(f.fichier));
 
   const avant = db.posts;
   db.posts = avant.filter((p) => p !== autre).map((p) => (p === base ? fusion : p));
@@ -635,6 +671,16 @@ function hauteurTexte(row, colonnes) {
   return lignes * 15 + 6;
 }
 
+const EMU_PAR_PX = 9525;
+
+/** Rangement des images d'un visuel dans sa cellule Excel : une image seule en plus grand, un carrousel en grille de miniatures. */
+function grilleImages(n, largeurPx) {
+  const marge = 4;
+  if (n === 1) return { colonnes: 1, cote: 150, marge };
+  const colonnes = n <= 4 ? 2 : n <= 9 ? 3 : 4;
+  return { colonnes, cote: Math.floor((largeurPx - marge * (colonnes + 1)) / colonnes), marge };
+}
+
 async function buildWorkbook(posts, { photos = true } = {}) {
   const evById = new Map(db.evenements.map((e) => [e.id, e]));
   const wb = new ExcelJS.Workbook();
@@ -643,9 +689,11 @@ async function buildWorkbook(posts, { photos = true } = {}) {
   wb.created = new Date();
 
   /* Feuille 1 : posts */
-  // Colonnes photo seulement si au moins un post exporté en a une.
-  const photoDe = (p, slot) => (normaliserPhotos(p.photos)[slot] ? p.photos[slot] : null);
-  const avecPhotos = photos && posts.some((p) => photoDe(p, 'meta') || photoDe(p, 'linkedin'));
+  // Colonnes photo seulement si au moins un post exporté en a une ; plus larges si un post a un carrousel.
+  const imagesDe = (p, slot) => normaliserPhotos(p.photos)[slot];
+  const maxImages = (slot) => posts.reduce((m, p) => Math.max(m, imagesDe(p, slot).length), 0);
+  const avecPhotos = photos && (maxImages('meta') > 0 || maxImages('linkedin') > 0);
+  const largeurPhoto = (slot) => (maxImages(slot) > 1 ? 34 : 24);
   const ws = wb.addWorksheet('Calendrier éditorial', { views: [{ state: 'frozen', ySplit: 1, xSplit: 3 }] });
   ws.columns = [
     { header: 'Date de publication', key: 'date', width: 16, style: { numFmt: 'dd/mm/yyyy' } },
@@ -660,8 +708,8 @@ async function buildWorkbook(posts, { photos = true } = {}) {
     { header: 'Idée visuelle', key: 'image', width: 40 },
     ...(avecPhotos
       ? [
-          { header: 'Photo Instagram + Facebook', key: 'photoMeta', width: 24 },
-          { header: 'Photo LinkedIn', key: 'photoLinkedin', width: 24 },
+          { header: 'Photo Instagram + Facebook', key: 'photoMeta', width: largeurPhoto('meta') },
+          { header: 'Photo LinkedIn', key: 'photoLinkedin', width: largeurPhoto('linkedin') },
         ]
       : []),
     { header: 'Événement', key: 'evenement', width: 30 },
@@ -702,27 +750,37 @@ async function buildWorkbook(posts, { photos = true } = {}) {
       const COLONNES_TEXTE = [['titre', 38], ['description', 70], ['hashtags', 34], ['image', 40], ['evenement', 30], ['explication', 52], ['angle', 40], ['vigilance', 40]];
       let hauteurPhoto = 0;
       for (const [slot, cle] of [['meta', 'photoMeta'], ['linkedin', 'photoLinkedin']]) {
-        const ph = photoDe(p, slot);
-        if (!ph) continue;
-        let buffer;
-        try {
-          buffer = fs.readFileSync(cheminPhoto(ph.fichier));
-        } catch {
-          continue; // fichier manquant : on exporte le post sans la photo
+        const lues = [];
+        for (const ph of imagesDe(p, slot)) {
+          try {
+            lues.push({ ph, buffer: fs.readFileSync(cheminPhoto(ph.fichier)) });
+          } catch {
+            /* fichier manquant : on exporte le post sans cette image */
+          }
         }
-        const echelle = Math.min(150 / ph.largeur, 150 / ph.hauteur, 1);
-        const largeur = Math.round(ph.largeur * echelle);
-        const hauteur = Math.round(ph.hauteur * echelle);
-        const imageId = wb.addImage({ buffer, extension: ph.type === 'image/png' ? 'png' : 'jpeg' });
-        ws.addImage(imageId, {
-          tl: { col: ws.getColumn(cle).number - 1 + 0.04, row: row.number - 1 + 0.03 },
-          ext: { width: largeur, height: hauteur },
-          editAs: 'oneCell',
+        if (!lues.length) continue;
+        const colonne = ws.getColumn(cle);
+        const { colonnes, cote, marge } = grilleImages(lues.length, Math.round(colonne.width * 7 + 5));
+        let bas = 0;
+        lues.forEach(({ ph, buffer }, i) => {
+          const echelle = Math.min(cote / ph.largeur, cote / ph.hauteur, 1);
+          const largeur = Math.round(ph.largeur * echelle);
+          const hauteur = Math.round(ph.hauteur * echelle);
+          const x = marge + (i % colonnes) * (cote + marge);
+          const y = marge + Math.floor(i / colonnes) * (cote + marge);
+          const imageId = wb.addImage({ buffer, extension: ph.type === 'image/png' ? 'png' : 'jpeg' });
+          ws.addImage(imageId, {
+            tl: { nativeCol: colonne.number - 1, nativeColOff: x * EMU_PAR_PX, nativeRow: row.number - 1, nativeRowOff: y * EMU_PAR_PX },
+            ext: { width: largeur, height: hauteur },
+            editAs: 'oneCell',
+          });
+          bas = Math.max(bas, y + hauteur);
         });
-        hauteurPhoto = Math.max(hauteurPhoto, hauteur * 0.75 + 8);
+        hauteurPhoto = Math.max(hauteurPhoto, (bas + marge) * 0.75);
       }
       // Hauteurs fixes pour toutes les lignes : les photos restent ainsi ancrées à la bonne ligne dans Excel comme dans LibreOffice.
-      row.height = Math.max(hauteurPhoto, hauteurTexte(row, COLONNES_TEXTE), 24);
+      // (Excel n'accepte pas de ligne plus haute que 409 points.)
+      row.height = Math.min(409, Math.max(hauteurPhoto, hauteurTexte(row, COLONNES_TEXTE), 24));
     }
   }
   if (posts.length) ws.autoFilter = { from: 'A1', to: { row: 1, column: ws.columns.length } };
@@ -873,16 +931,25 @@ route('DELETE', /^\/api\/posts\/([\w-]+)$/, ({ params }) => {
   if (i < 0) throw new HttpError(404, 'Post introuvable.');
   const [removed] = db.posts.splice(i, 1);
   saveDb();
-  PHOTO_SLOTS.forEach((slot) => supprimerFichierPhoto(removed.photos && removed.photos[slot]));
+  toutesLesPhotos(removed.photos).forEach(supprimerFichierPhoto);
   return { ok: true, supprime: removed.id };
 });
 
-// Photo d'un post : slot « meta » (Instagram + Facebook) ou « linkedin ». L'envoi (PUT, corps = image brute) est traité dans handle().
-route('GET', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/, ({ params }) => {
+/*
+ * Images d'un post : visuel « meta » (Instagram + Facebook) ou « linkedin », chacun étant une liste ordonnée (carrousel).
+ * L'envoi (POST = ajouter à la fin, PUT = remplacer tout le visuel ; corps = image brute) est traité dans handle().
+ *   GET    /posts/:id/photo/:visuel            première image (ancien comportement)
+ *   GET    /posts/:id/photo/:visuel/:fichier   une image précise
+ *   DELETE /posts/:id/photo/:visuel            retire toutes les images du visuel
+ *   DELETE /posts/:id/photo/:visuel/:fichier   retire une image
+ *   PUT    /posts/:id/photo/:visuel/ordre      { "fichiers": [...] } nouvel ordre (toutes les images, une fois chacune)
+ */
+route('GET', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)(?:\/([\w.-]+))?$/, ({ params }) => {
   const post = db.posts.find((p) => p.id === params[0]);
   if (!post) throw new HttpError(404, 'Post introuvable.');
-  const photo = normaliserPhotos(post.photos)[params[1]];
-  if (!photo) throw new HttpError(404, 'Pas de photo pour ce visuel.');
+  const liste = normaliserPhotos(post.photos)[params[1]];
+  const photo = params[2] ? liste.find((f) => f.fichier === params[2]) : liste[0];
+  if (!photo) throw new HttpError(404, params[2] ? 'Image introuvable pour ce visuel.' : 'Pas de photo pour ce visuel.');
   let raw;
   try {
     raw = fs.readFileSync(cheminPhoto(photo.fichier));
@@ -892,14 +959,40 @@ route('GET', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/, ({ params }) =>
   return { raw, type: photo.type, inline: true, cache: 'private, max-age=3600' };
 });
 
-route('DELETE', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/, ({ params }) => {
+route('DELETE', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)(?:\/([\w.-]+))?$/, ({ params }) => {
   const post = db.posts.find((p) => p.id === params[0]);
   if (!post) throw new HttpError(404, 'Post introuvable.');
   post.photos = normaliserPhotos(post.photos);
-  const ancienne = post.photos[params[1]];
-  post.photos[params[1]] = null;
+  const slot = params[1];
+  const anciennes = post.photos[slot];
+  let retirees = anciennes;
+  if (params[2]) {
+    retirees = anciennes.filter((f) => f.fichier === params[2]);
+    if (!retirees.length) throw new HttpError(404, 'Image introuvable pour ce visuel.');
+  }
+  post.photos[slot] = anciennes.filter((f) => !retirees.includes(f));
   saveDb();
-  supprimerFichierPhoto(ancienne);
+  retirees.forEach(supprimerFichierPhoto);
+  return post;
+});
+
+route('PUT', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)\/ordre$/, ({ params, body }) => {
+  const post = db.posts.find((p) => p.id === params[0]);
+  if (!post) throw new HttpError(404, 'Post introuvable.');
+  post.photos = normaliserPhotos(post.photos);
+  const slot = params[1];
+  const liste = post.photos[slot];
+  const fichiers = body && body.fichiers;
+  if (
+    !Array.isArray(fichiers) ||
+    fichiers.length !== liste.length ||
+    new Set(fichiers).size !== fichiers.length ||
+    !liste.every((f) => fichiers.includes(f.fichier))
+  ) {
+    throw new HttpError(400, 'Champ « fichiers » : indique toutes les images du visuel, une seule fois chacune, dans le nouvel ordre.');
+  }
+  post.photos[slot] = fichiers.map((nom) => liste.find((f) => f.fichier === nom));
+  saveDb();
   return post;
 });
 
@@ -1020,9 +1113,12 @@ async function handle(req, res) {
   // Les posts « Planifié » arrivés à échéance passent en « Publié » avant toute lecture ou écriture : on ne voit jamais un état périmé.
   if (pathname !== '/api/health') publierPostsEchus();
 
-  // Envoi d'une photo : le corps est l'image elle-même (pas du JSON).
-  const mPhoto = req.method === 'PUT' && pathname.match(/^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/);
-  if (mPhoto) return send(res, 200, await enregistrerPhoto(req, mPhoto[1], mPhoto[2]), SECURITY_HEADERS);
+  // Envoi d'une image : le corps est l'image elle-même (pas du JSON). POST l'ajoute au carrousel, PUT remplace tout le visuel.
+  const mPhoto = (req.method === 'PUT' || req.method === 'POST') && pathname.match(/^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)$/);
+  if (mPhoto) {
+    const remplacer = req.method === 'PUT';
+    return send(res, remplacer ? 200 : 201, await enregistrerPhoto(req, mPhoto[1], mPhoto[2], { remplacer }), SECURITY_HEADERS);
+  }
 
   for (const r of routes) {
     if (r.method !== req.method) continue;
