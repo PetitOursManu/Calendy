@@ -708,7 +708,7 @@ test('export Excel : deux feuilles, dates réelles, filtre par statut', async ()
   // aucun post validé au départ sauf po-20261001 (validé par le test précédent)
   const only = await api('GET', '/api/export.xlsx', undefined, { raw: true });
   assert.equal(only.status, 200);
-  assert.match(only.headers.get('content-disposition'), /Calendrier_editorial_Elisa30.*\.xlsx/);
+  assert.match(only.headers.get('content-disposition'), /Calendrier_editorial_.*\.xlsx/);
   assert.equal(only.headers.get('x-calendy-posts'), '1');
 
   // les tests précédents partagent la base : on compare au total réel (18 du seed + « Post Téléthon »)

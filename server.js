@@ -33,6 +33,7 @@ const HOST = process.env.HOST || '127.0.0.1';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
 const HISTORIQUE_FILE = path.join(DATA_DIR, 'historique.json');
+const REGLAGES_FILE = path.join(DATA_DIR, 'reglages.json');
 const IMAGES_DIR = path.join(DATA_DIR, 'images');
 
 /**
@@ -326,6 +327,30 @@ function saveDb() {
 }
 
 const newId = (prefix) => `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
+
+/* ------------------------------------------------------------------ */
+/* Réglages généraux                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Nom de la structure qui utilise Calendy : vide par défaut, l'appli n'est liée à aucune organisation. */
+function nomStructure() {
+  try {
+    const { structure } = JSON.parse(fs.readFileSync(REGLAGES_FILE, 'utf8'));
+    return typeof structure === 'string' ? structure : '';
+  } catch {
+    return ''; // pas encore de réglages
+  }
+}
+
+function modifierReglages(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Corps JSON attendu.');
+  const structure = str(body.structure, 'structure', { max: 80 }).replace(/\s+/g, ' ');
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const tmp = `${REGLAGES_FILE}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify({ structure }, null, 2), 'utf8');
+  fs.renameSync(tmp, REGLAGES_FILE);
+  return { structure };
+}
 
 /* ------------------------------------------------------------------ */
 /* Historique global : Annuler / Rétablir, comme Ctrl+Z dans un traitement de texte */
@@ -825,7 +850,8 @@ async function buildWorkbook(posts, { photos = true } = {}) {
   const evById = new Map(db.evenements.map((e) => [e.id, e]));
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Calendy';
-  wb.title = 'Calendrier éditorial — ESAT Elisa 30';
+  const structure = nomStructure();
+  wb.title = structure ? `Calendrier éditorial — ${structure}` : 'Calendrier éditorial';
   wb.created = new Date();
 
   /* Feuille 1 : posts */
@@ -936,7 +962,7 @@ async function buildWorkbook(posts, { photos = true } = {}) {
     { header: 'Date(s)', key: 'dates', width: 30 },
     { header: 'Événement', key: 'nom', width: 38 },
     { header: "Ce qu'il faut savoir", key: 'explication', width: 70 },
-    { header: 'Lien avec Elisa30', key: 'lien', width: 60 },
+    { header: `Lien avec ${structure || 'la structure'}`, key: 'lien', width: 60 },
     { header: 'Posts prévus', key: 'nb', width: 13 },
   ];
   styleHeader(we.getRow(1));
@@ -973,12 +999,14 @@ async function appelerRoute(method, chemin, { body, query = {}, meta } = {}) {
   return resultat && resultat.status && resultat.body !== undefined ? resultat.body : resultat;
 }
 
-const agent = creerAgent({ dataDir: DATA_DIR, HttpError, appelerRoute, instantLocal });
+const agent = creerAgent({ dataDir: DATA_DIR, HttpError, appelerRoute, instantLocal, nomStructure });
 
 route('GET', /^\/api\/health$/, () => ({ ok: true }));
 
 /* Historique et agent IA : ces routes ne sont pas elles-mêmes des modifications à mémoriser */
 const SANS_HISTORIQUE = { sansHistorique: true };
+route('GET', /^\/api\/reglages$/, () => ({ structure: nomStructure() }));
+route('PUT', /^\/api\/reglages$/, ({ body }) => modifierReglages(body), SANS_HISTORIQUE);
 route('GET', /^\/api\/historique$/, () => etatHistorique());
 route('POST', /^\/api\/historique\/annuler$/, () => parcourirHistorique('annuler', 'retablir', 'avant', 'annuler'), SANS_HISTORIQUE);
 route('POST', /^\/api\/historique\/retablir$/, () => parcourirHistorique('retablir', 'annuler', 'apres', 'rétablir'), SANS_HISTORIQUE);
@@ -991,6 +1019,7 @@ route('POST', /^\/api\/agent\/confirmer$/, ({ body }) => agent.confirmer(body), 
 
 route('GET', /^\/api\/state$/, () => ({
   historique: etatHistorique(),
+  structure: nomStructure(),
   evenements: [...db.evenements].sort((a, b) => a.dateDebut.localeCompare(b.dateDebut) || a.nom.localeCompare(b.nom)),
   posts: [...db.posts].sort(byDate),
   statuts: STATUT_LIBELLES,
@@ -1158,6 +1187,12 @@ route('PUT', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)\/ordre$/, ({ param
   return post;
 });
 
+/** Le nom de la structure, réduit à ce qu'un nom de fichier accepte partout. */
+function suffixeStructure() {
+  const propre = nomStructure().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w-]+/g, '_').replace(/^_+|_+$/g, '');
+  return propre ? `_${propre}` : '';
+}
+
 /* Export Excel : ?statuts=valide,planifie,publie (défaut) | all  &du=AAAA-MM-JJ &au=AAAA-MM-JJ  &photos=0 (sans les photos) */
 route('GET', /^\/api\/export\.xlsx$/, async ({ query }) => {
   const statuts = !query.statuts ? ['valide', 'planifie', 'publie'] : query.statuts === 'all' ? STATUTS : query.statuts.split(',');
@@ -1168,7 +1203,7 @@ route('GET', /^\/api\/export\.xlsx$/, async ({ query }) => {
   return {
     raw: Buffer.from(buffer),
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    filename: `Calendrier_editorial_Elisa30${periode}_${stamp}.xlsx`,
+    filename: `Calendrier_editorial${suffixeStructure()}${periode}_${stamp}.xlsx`,
     headers: { 'X-Calendy-Posts': String(posts.length) },
   };
 });

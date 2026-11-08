@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const TOKEN = 'jeton-agent-0123456789';
-const PORT = 4100 + Math.floor(Math.random() * 90);
+const PORT = 5100 + Math.floor(Math.random() * 90);
 const BASE = `http://127.0.0.1:${PORT}`;
 const CLE = 'sk-ant-secret-de-test';
 const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64');
@@ -149,6 +149,27 @@ test('réglages : la clé n’est jamais renvoyée et un message sans clé est r
 test('réglages : valeurs invalides refusées', async () => {
   assert.equal((await api('PUT', '/api/agent/reglages', { fournisseur: 'autre' })).status, 400);
   assert.equal((await api('PUT', '/api/agent/reglages', { modeles: { anthropic: 'a b' } })).status, 400);
+});
+
+test('nom de la structure : vide par défaut, repris dans l’état, l’export et l’agent', async () => {
+  assert.deepEqual((await api('GET', '/api/reglages')).json, { structure: '' });
+  assert.equal((await api('GET', '/api/state')).json.structure, '');
+  const nomExport = async () => {
+    const res = await fetch(`${BASE}/api/export.xlsx?statuts=all`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    return decodeURIComponent(res.headers.get('content-disposition').match(/filename\*=UTF-8''([^;]+)/)[1]);
+  };
+  await creerPost('Pour export');
+  assert.match(await nomExport(), /^Calendrier_editorial_\d{4}/);
+
+  assert.equal((await api('PUT', '/api/reglages', { structure: '  Maison  de quartier é ' })).json.structure, 'Maison de quartier é');
+  assert.equal((await api('GET', '/api/state')).json.structure, 'Maison de quartier é');
+  assert.match(await nomExport(), /^Calendrier_editorial_Maison_de_quartier_e_\d{4}/);
+  reponses = [claude(texte('Ok.'))];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  assert.match(JSON.stringify(requetes[0].body.system), /Tu travailles pour : Maison de quartier é/);
+
+  assert.equal((await api('PUT', '/api/reglages', { structure: 'x'.repeat(81) })).status, 400);
+  assert.equal((await api('PUT', '/api/reglages', { structure: '' })).json.structure, '');
 });
 
 /* ---------- agent ---------- */

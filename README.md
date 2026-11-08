@@ -69,6 +69,8 @@ Le bouton rond en bas à droite ouvre une petite fenêtre de discussion. L'agent
 
 Quand un post est ouvert, l'agent s'affiche à côté de la fiche et travaille dessus par défaut : un bouton **Corriger les fautes** est proposé, et on peut lui demander n'importe quelle modification. Ses changements sont enregistrés aussitôt et apparaissent dans la fiche ; une saisie non enregistrée sur un autre champ reste en place. Sur un post pas encore créé, il remplit simplement le formulaire, à enregistrer soi-même.
 
+Le **nom de la structure** se règle dans **Réglages, onglet Général** : il est vide par défaut, s'affiche à côté du logo, et il est repris dans l'export Excel et transmis à l'agent.
+
 Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images). Le bouton **Tester la connexion** vérifie la clé et le modèle.
 
 La clé est conservée sur le serveur dans `agent.json` (dans le dossier des données, séparé de `data.json`) et n'est jamais renvoyée au navigateur. Les variables `ANTHROPIC_API_KEY` et `OPENROUTER_API_KEY`, si elles existent, ont la priorité. Toute personne qui a accès à Calendy peut utiliser l'agent, donc consommer le crédit de cette clé. Les textes concernés, et les images si l'autorisation est cochée, sont envoyés au fournisseur choisi.
@@ -152,7 +154,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 63 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA
+npm test                # 64 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -173,6 +175,7 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | `GET/DELETE /posts/:id/photo/meta` (idem `linkedin`) | Sans nom de fichier : lit la première image, ou retire **toutes** les images du visuel (`meta` = Instagram + Facebook) |
 | `PUT /posts/:id/photo/meta/ordre` (idem `linkedin`) | Nouvel ordre : `{ "fichiers": ["nom1.jpg", "nom2.jpg"] }`, avec toutes les images du visuel, une fois chacune |
 | `GET /historique`, `POST /historique/annuler`, `POST /historique/retablir` | État de l'historique, annuler ou rétablir la dernière action (corps JSON `{}`). `409` s'il n'y a rien à faire |
+| `GET/PUT /reglages` | Réglages généraux : `{ "structure": "Nom affiché" }` (80 caractères au plus, vide par défaut) |
 | `GET/PUT /agent/reglages` | Réglages de l'agent, sans jamais renvoyer les clés. `PUT` partiel ; `cles: { "anthropic": null }` retire une clé |
 | `GET /agent/modeles?fournisseur=` | Modèles proposés (`anthropic` ou `openrouter`) |
 | `POST /agent/tester` | Vérifie la clé et le modèle enregistrés |
