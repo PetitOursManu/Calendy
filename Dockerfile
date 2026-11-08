@@ -10,7 +10,7 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY server.js seed.json ./
+COPY server.js agent.js seed.json ./
 COPY public ./public
 
 # Les données (data.json) vivent dans un volume : elles survivent aux mises à jour de l'image.

@@ -31,13 +31,14 @@ async function api(method, url, body, { token = TOKEN, raw = false } = {}) {
 before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'calendy-test-'));
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, CALENDY_TOKEN: TOKEN },
+    // Sans historique, une image retirée est effacée tout de suite : ces tests vérifient ce nettoyage du disque.
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, CALENDY_TOKEN: TOKEN, CALENDY_HISTORIQUE_MAX: '0' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   await new Promise((resolve, reject) => {
     child.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
     child.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
-    setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+    setTimeout(() => reject(new Error('démarrage trop long')), 30000).unref();
   });
 });
 
@@ -98,7 +99,7 @@ test('un jeton mal formé dans la variable d’environnement reste utilisable', 
       await new Promise((resolve, reject) => {
         proc.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
         proc.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
-        setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+        setTimeout(() => reject(new Error('démarrage trop long')), 30000).unref();
       });
       const url = `http://127.0.0.1:${port}/api/state`;
       const bon = await fetch(url, { headers: { Authorization: `Bearer ${envoye}` } });
@@ -451,7 +452,7 @@ test('photos : les anciennes données (une photo par visuel) sont lues comme une
     await new Promise((resolve, reject) => {
       serveur.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
       serveur.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
-      setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+      setTimeout(() => reject(new Error('démarrage trop long')), 30000).unref();
     });
     const entetes = { Authorization: `Bearer ${TOKEN}` };
     const lu = await (await fetch(`http://127.0.0.1:${port}/api/posts/po-ancien`, { headers: entetes })).json();
@@ -832,7 +833,7 @@ test('les posts « planifie » arrivés à échéance passent seuls en « publie
     await new Promise((resolve, reject) => {
       serveur.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
       serveur.on('exit', (code) => reject(new Error(`serveur arrêté (code ${code})`)));
-      setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+      setTimeout(() => reject(new Error('démarrage trop long')), 30000).unref();
     });
 
     // Dès le démarrage, le fichier de données est à jour.

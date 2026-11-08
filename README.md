@@ -7,7 +7,7 @@ Calendrier éditorial des réseaux sociaux de l'ESAT Elisa 30.
 On y range les événements du moment (Octobre Rose, Semaine du Goût, DuoDay…) et les idées de posts qui s'y rattachent. On voit tout sur un calendrier, on valide ou on refuse chaque idée, et on exporte les posts retenus dans un fichier Excel pour la direction. Claude Desktop peut piloter l'appli : proposer des idées, valider, exporter.
 
 - **Une page** (`public/index.html`) : HTML, CSS et JavaScript dans un seul fichier, polices comprises.
-- **Un petit serveur Node** (`server.js`) : il garde les données dans un fichier `data.json` et génère l'Excel.
+- **Un petit serveur Node** (`server.js`, et `agent.js` pour l'agent IA) : il garde les données dans un fichier `data.json` et génère l'Excel.
 - **Un connecteur MCP** (`dist/calendy-mcp.js`) : un seul fichier, à copier sur le poste qui a Claude Desktop.
 
 ## Démarrer en local
@@ -52,7 +52,26 @@ Ces trois actions sont dans la fiche d'un post (boutons **Déplacer**, **Cloner*
 
 - **Déplacer** : choisis une nouvelle date. Le statut, le texte et les images ne changent pas. Sur le calendrier (vues Calendrier et À valider en mode Calendrier), on peut aussi **glisser un post sur un autre jour** ; un bouton Annuler apparaît.
 - **Cloner** : une copie du post par date, plusieurs dates à la fois. Les copies reprennent le texte, les hashtags, l'événement et les images, carrousel compris (chaque copie a ses propres fichiers) et repartent en **idée à valider**, même si l'original est validé ou publié. Sur le calendrier, **glisser un post sur un jour avec Ctrl enfoncé** (Option sur Mac) crée une copie. Annuler supprime les copies.
-- **Fusionner** : réunit deux posts qui n'ont **aucun réseau en commun** (typiquement le post Instagram et le post Facebook d'un même sujet) en un seul post prévu sur les deux réseaux. Tu choisis le second post dans une liste (les plus probables en premier : même jour, titre proche), puis, pour chaque point où les deux diffèrent (titre, légende, hashtags, date, images…), la version à garder (pour les images Instagram + Facebook, c'est le carrousel entier de l'un ou de l'autre, ou aucune image). Ce qui n'existe que d'un côté est repris automatiquement. Si les statuts diffèrent, le choix proposé par défaut est « idée à valider ». Le second post est **supprimé** (il n'y a pas d'annulation)  ; les images écartées sont effacées.
+- **Fusionner** : réunit deux posts qui n'ont **aucun réseau en commun** (typiquement le post Instagram et le post Facebook d'un même sujet) en un seul post prévu sur les deux réseaux. Tu choisis le second post dans une liste (les plus probables en premier : même jour, titre proche), puis, pour chaque point où les deux diffèrent (titre, légende, hashtags, date, images…), la version à garder (pour les images Instagram + Facebook, c'est le carrousel entier de l'un ou de l'autre, ou aucune image). Ce qui n'existe que d'un côté est repris automatiquement. Si les statuts diffèrent, le choix proposé par défaut est « idée à valider ». Le second post est **supprimé** et les images écartées ne sont plus utilisées ; **Annuler** remet les deux posts comme avant.
+
+### Annuler et rétablir
+
+En bas à droite de l'écran, partout dans l'appli (y compris par-dessus une fiche ouverte), les boutons **Annuler** et **Rétablir** reviennent en arrière ou refont la dernière action, avec **Ctrl+Z** et **Ctrl+Y** (ou Ctrl+Maj+Z ; Cmd sur Mac). Dans un champ de saisie, Ctrl+Z garde son rôle habituel : il annule la frappe. Le survol d'un bouton indique l'action concernée.
+
+- Tout s'annule : création, modification, déplacement, statut, clonage, fusion, suppression, images. Cela vaut pour l'interface, l'agent IA et Claude Desktop. Toutes les modifications faites par l'agent en réponse à un même message s'annulent d'un coup.
+- L'historique est **commun à tous les utilisateurs** : Annuler porte sur la dernière action, quelle que soit la personne qui l'a faite. Il garde les 100 dernières actions et survit au redémarrage du serveur.
+- Une image retirée reste sur le disque tant qu'une annulation peut la restaurer. Elle est effacée quand l'action sort de l'historique.
+- Le passage automatique de « Planifié » à « Publié » n'est pas une action de l'historique.
+
+## Agent IA
+
+Le bouton rond en bas à droite ouvre une petite fenêtre de discussion. L'agent agit directement sur le calendrier : ajouter ou modifier des posts et des événements, les déplacer, changer les statuts, cloner des posts, regarder leurs images. **Supprimer et fusionner demandent toujours un clic sur « Confirmer »** ; tout le reste s'annule avec le bouton Annuler.
+
+Quand un post est ouvert, l'agent s'affiche à côté de la fiche et travaille dessus par défaut : un bouton **Corriger les fautes** est proposé, et on peut lui demander n'importe quelle modification. Ses changements sont enregistrés aussitôt et apparaissent dans la fiche ; une saisie non enregistrée sur un autre champ reste en place. Sur un post pas encore créé, il remplit simplement le formulaire, à enregistrer soi-même.
+
+Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images). Le bouton **Tester la connexion** vérifie la clé et le modèle.
+
+La clé est conservée sur le serveur dans `agent.json` (dans le dossier des données, séparé de `data.json`) et n'est jamais renvoyée au navigateur. Les variables `ANTHROPIC_API_KEY` et `OPENROUTER_API_KEY`, si elles existent, ont la priorité. Toute personne qui a accès à Calendy peut utiliser l'agent, donc consommer le crédit de cette clé. Les textes concernés, et les images si l'autorisation est cochée, sont envoyés au fournisseur choisi.
 
 ### Export Excel
 
@@ -113,7 +132,7 @@ Au premier accès, la page demande le jeton et le garde dans le navigateur. Le c
 
 Au démarrage, les journaux du conteneur indiquent `Jeton d'accès actif : N caractères` (jamais la valeur). Le serveur ignore les espaces, retours à la ligne et guillemets qui entoureraient le jeton. Si la page répond « jeton refusé », compare ce nombre avec la longueur du jeton collé ; un refus écrit aussi `Jeton refusé : X caractères reçus, Y attendus` dans les journaux. Après avoir modifié la variable, il faut **redéployer** l'application. Évite `$` et `#` dans le jeton (certains hébergeurs les interprètent) : `openssl rand -hex 24` ne produit que des chiffres et des lettres.
 
-Sauvegarde : copie `data.json` **et le dossier `images`** du volume.
+Sauvegarde : copie `data.json` **et le dossier `images`** du volume. `historique.json` (annulations) et `agent.json` (réglages et clé de l'agent) y sont aussi ; ne partage pas ce dernier.
 
 ## Variables d'environnement
 
@@ -125,13 +144,15 @@ Sauvegarde : copie `data.json` **et le dossier `images`** du volume.
 | `CALENDY_TOKEN` | Jeton d'accès à l'API (recommandé hors poste local) | aucun |
 | `CALENDY_TZ` | Fuseau horaire des dates et heures des posts, utilisé pour passer les posts « Planifié » en « Publié » à l'échéance | `Europe/Paris` |
 | `CALENDY_NO_SEED` | `1` pour ne pas charger `seed.json` au premier démarrage | non défini |
+| `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` | Clés de l'agent IA, prioritaires sur celles saisies dans les réglages | aucune |
+| `CALENDY_HISTORIQUE_MAX` | Nombre d'actions gardées pour Annuler / Rétablir (`0` désactive l'annulation) | `100` |
 
 Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_TOKEN` et `CALENDY_EXPORT_DIR`.
 
 ## Pour les développeurs
 
 ```bash
-npm test                # 44 tests : API, photos, clonage, fusion, export Excel, connecteur MCP
+npm test                # 63 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -151,6 +172,12 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | `GET/DELETE /posts/:id/photo/meta/:fichier` (idem `linkedin`) | Lit ou retire **une** image, désignée par son nom de fichier (champ `fichier` des `photos` du post) |
 | `GET/DELETE /posts/:id/photo/meta` (idem `linkedin`) | Sans nom de fichier : lit la première image, ou retire **toutes** les images du visuel (`meta` = Instagram + Facebook) |
 | `PUT /posts/:id/photo/meta/ordre` (idem `linkedin`) | Nouvel ordre : `{ "fichiers": ["nom1.jpg", "nom2.jpg"] }`, avec toutes les images du visuel, une fois chacune |
+| `GET /historique`, `POST /historique/annuler`, `POST /historique/retablir` | État de l'historique, annuler ou rétablir la dernière action (corps JSON `{}`). `409` s'il n'y a rien à faire |
+| `GET/PUT /agent/reglages` | Réglages de l'agent, sans jamais renvoyer les clés. `PUT` partiel ; `cles: { "anthropic": null }` retire une clé |
+| `GET /agent/modeles?fournisseur=` | Modèles proposés (`anthropic` ou `openrouter`) |
+| `POST /agent/tester` | Vérifie la clé et le modèle enregistrés |
+| `POST /agent/message` | Échange avec l'agent : `{ "messages": [...], "contexte": {...} }`. Répond `{ reponse, actions, confirmations, formulaire }` |
+| `POST /agent/confirmer` | Confirme ou refuse une suppression ou une fusion : `{ "id": "...", "accepter": true }` |
 | `GET /export.xlsx` | Export Excel : `statuts` (`valide,planifie,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
 | `GET /health` | Contrôle de santé, sans jeton |
 

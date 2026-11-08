@@ -15,6 +15,8 @@
  *   CALENDY_TZ     fuseau horaire des dates et heures des posts (défaut Europe/Paris) ; sert à passer
  *                  automatiquement les posts « Planifié » en « Publié » à leur échéance
  *   CALENDY_NO_SEED=1  ne pas charger seed.json au premier démarrage
+ *   ANTHROPIC_API_KEY, OPENROUTER_API_KEY  clés de l'agent IA (prioritaires sur celles saisies dans les réglages)
+ *   CALENDY_HISTORIQUE_MAX  nombre d'actions gardées pour Annuler / Rétablir (défaut 100 ; 0 désactive l'annulation)
  *
  * Les photos des posts sont rangées dans DATA_DIR/images (à sauvegarder avec data.json).
  */
@@ -24,11 +26,13 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const ExcelJS = require('exceljs');
+const { creerAgent } = require('./agent.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(__dirname, 'data'));
 const DATA_FILE = path.join(DATA_DIR, 'data.json');
+const HISTORIQUE_FILE = path.join(DATA_DIR, 'historique.json');
 const IMAGES_DIR = path.join(DATA_DIR, 'images');
 
 /**
@@ -265,23 +269,24 @@ async function enregistrerPhoto(req, id, slot, { remplacer = false } = {}) {
   if (!info || info.type !== type || !info.largeur || !info.hauteur || info.largeur > 20000 || info.hauteur > 20000) {
     throw new HttpError(400, 'Le fichier n’est pas une image JPEG ou PNG valide.');
   }
-  const post = db.posts.find((p) => p.id === id);
-  if (!post) throw new HttpError(404, 'Post introuvable.');
-  post.photos = normaliserPhotos(post.photos);
-  if (!remplacer && post.photos[slot].length >= PHOTOS_PAR_VISUEL) {
-    throw new HttpError(400, `Maximum ${PHOTOS_PAR_VISUEL} images par visuel : retire-en une avant d’en ajouter une autre.`);
-  }
-  fs.mkdirSync(IMAGES_DIR, { recursive: true });
-  const fichier = nomFichierUnique(id, slot, info.ext);
-  const tmp = `${cheminPhoto(fichier)}.tmp`;
-  fs.writeFileSync(tmp, buf);
-  fs.renameSync(tmp, cheminPhoto(fichier));
-  const anciennes = post.photos[slot];
-  const nouvelle = { fichier, type: info.type, largeur: info.largeur, hauteur: info.hauteur, octets: buf.length };
-  post.photos[slot] = remplacer ? [nouvelle] : [...anciennes, nouvelle];
-  saveDb();
-  if (remplacer) anciennes.forEach(supprimerFichierPhoto);
-  return post;
+  return avecHistorique(() => {
+    const post = db.posts.find((p) => p.id === id);
+    if (!post) throw new HttpError(404, 'Post introuvable.');
+    post.photos = normaliserPhotos(post.photos);
+    if (!remplacer && post.photos[slot].length >= PHOTOS_PAR_VISUEL) {
+      throw new HttpError(400, `Maximum ${PHOTOS_PAR_VISUEL} images par visuel : retire-en une avant d’en ajouter une autre.`);
+    }
+    fs.mkdirSync(IMAGES_DIR, { recursive: true });
+    const fichier = nomFichierUnique(id, slot, info.ext);
+    const tmp = `${cheminPhoto(fichier)}.tmp`;
+    fs.writeFileSync(tmp, buf);
+    fs.renameSync(tmp, cheminPhoto(fichier));
+    const anciennes = post.photos[slot];
+    const nouvelle = { fichier, type: info.type, largeur: info.largeur, hauteur: info.hauteur, octets: buf.length };
+    post.photos[slot] = remplacer ? [nouvelle] : [...anciennes, nouvelle];
+    saveDb();
+    return post;
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -321,6 +326,145 @@ function saveDb() {
 }
 
 const newId = (prefix) => `${prefix}-${crypto.randomBytes(4).toString('hex')}`;
+
+/* ------------------------------------------------------------------ */
+/* Historique global : Annuler / Rétablir, comme Ctrl+Z dans un traitement de texte */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Chaque modification, d'où qu'elle vienne (interface, agent IA, connecteur MCP), est mémorisée sous forme de différences.
+ * Un fichier image retiré reste sur le disque tant qu'une entrée de l'historique peut le restaurer ; il n'est effacé
+ * qu'au moment où plus rien ne peut y revenir (voir oublierEntrees). Fichier séparé : data.json et son .bak restent inchangés.
+ */
+const HISTORIQUE_MAX = (() => {
+  const n = Number(process.env.CALENDY_HISTORIQUE_MAX);
+  return process.env.CALENDY_HISTORIQUE_MAX !== undefined && Number.isInteger(n) && n >= 0 ? n : 100;
+})();
+let historique = { annuler: [], retablir: [] };
+const cloneJson = (v) => JSON.parse(JSON.stringify(v));
+const TYPES_HISTORIQUE = ['posts', 'evenements'];
+
+function chargerHistorique() {
+  try {
+    const h = JSON.parse(fs.readFileSync(HISTORIQUE_FILE, 'utf8'));
+    historique = { annuler: Array.isArray(h.annuler) ? h.annuler : [], retablir: Array.isArray(h.retablir) ? h.retablir : [] };
+  } catch {
+    historique = { annuler: [], retablir: [] }; // absent ou illisible : on repart d'un historique vide
+  }
+}
+
+function enregistrerHistorique() {
+  try {
+    const tmp = `${HISTORIQUE_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(historique), 'utf8');
+    fs.renameSync(tmp, HISTORIQUE_FILE);
+  } catch (err) {
+    console.error('Historique non enregistré :', err.message); // la modification elle-même, déjà enregistrée, reste valable
+  }
+}
+
+const fichiersDe = (element) => (element ? toutesLesPhotos(element.photos).map((f) => f.fichier) : []);
+const fichiersEntree = (e) => e.posts.flatMap((c) => [...fichiersDe(c.avant), ...fichiersDe(c.apres)]);
+
+/** Les entrées sorties de l'historique ne peuvent plus restaurer leurs images : on efface celles qui ne servent plus à rien. */
+function oublierEntrees(entrees) {
+  if (!entrees.length) return;
+  const utiles = new Set([...db.posts.flatMap(fichiersDe), ...historique.annuler.flatMap(fichiersEntree), ...historique.retablir.flatMap(fichiersEntree)]);
+  for (const fichier of new Set(entrees.flatMap(fichiersEntree))) if (!utiles.has(fichier)) supprimerFichierPhoto({ fichier });
+}
+
+const empreintes = (liste) => new Map(liste.map((x) => [x.id, JSON.stringify(x)]));
+
+function differences(avant, liste) {
+  const out = [];
+  const presents = new Set();
+  for (const x of liste) {
+    presents.add(x.id);
+    const texte = JSON.stringify(x);
+    if (avant.get(x.id) !== texte) out.push({ id: x.id, avant: avant.has(x.id) ? JSON.parse(avant.get(x.id)) : null, apres: JSON.parse(texte) });
+  }
+  for (const [id, texte] of avant) if (!presents.has(id)) out.push({ id, avant: JSON.parse(texte), apres: null });
+  return out;
+}
+
+function decrireChangement(posts, evenements) {
+  const titre = (c) => `« ${(c.apres || c.avant).titre} »`;
+  const nom = (c) => `« ${(c.apres || c.avant).nom} »`;
+  if (evenements.length === 1) {
+    const c = evenements[0];
+    return `${!c.avant ? 'Création' : !c.apres ? 'Suppression' : 'Modification'} de l’événement ${nom(c)}`;
+  }
+  if (evenements.length) return `${evenements.length} événements modifiés`;
+  const crees = posts.filter((c) => !c.avant);
+  const supprimes = posts.filter((c) => !c.apres);
+  if (posts.length === 2 && supprimes.length === 1 && !crees.length) return `Fusion de ${titre(posts.find((c) => c.apres))}`;
+  if (crees.length === posts.length && posts.length > 1) return `Clonage (${posts.length} copies)`;
+  if (posts.length > 1) return `${posts.length} posts modifiés`;
+  const c = posts[0];
+  if (!c.avant) return `Création de ${titre(c)}`;
+  if (!c.apres) return `Suppression de ${titre(c)}`;
+  if (c.avant.datePublication !== c.apres.datePublication) return `Déplacement de ${titre(c)}`;
+  if (c.avant.statut !== c.apres.statut) return `Statut de ${titre(c)} : ${STATUT_LIBELLES[c.apres.statut]}`;
+  if (JSON.stringify(c.avant.photos) !== JSON.stringify(c.apres.photos)) return `Images de ${titre(c)}`;
+  return `Modification de ${titre(c)}`;
+}
+
+/** Exécute une modification (fonction synchrone) et, si quelque chose a changé, l'ajoute à l'historique. */
+function avecHistorique(fn, { source = 'manuel', groupe = null } = {}) {
+  const avant = { posts: empreintes(db.posts), evenements: empreintes(db.evenements) };
+  const resultat = fn();
+  const posts = differences(avant.posts, db.posts);
+  const evenements = differences(avant.evenements, db.evenements);
+  if (posts.length || evenements.length) {
+    historique.annuler.push({ libelle: decrireChangement(posts, evenements), source, groupe, date: new Date().toISOString(), posts, evenements });
+    const oubliees = historique.retablir.splice(0);
+    while (historique.annuler.length > HISTORIQUE_MAX) oubliees.push(historique.annuler.shift());
+    oublierEntrees(oubliees);
+    enregistrerHistorique();
+  }
+  return resultat;
+}
+
+function etatHistorique() {
+  const resume = (pile) => {
+    if (!pile.length) return null;
+    const e = pile[pile.length - 1];
+    const n = e.groupe ? pile.filter((x) => x.groupe === e.groupe).length : 1;
+    return { libelle: n > 1 ? `${n} modifications de l’agent` : e.libelle, source: e.source };
+  };
+  return { annuler: resume(historique.annuler), retablir: resume(historique.retablir) };
+}
+
+/** Annule ou rétablit la dernière action. Les modifications d'un même échange avec l'agent forment une seule action. */
+function parcourirHistorique(depuis, vers, cote, verbe) {
+  const pile = historique[depuis];
+  if (!pile.length) throw new HttpError(409, `Rien à ${verbe}.`);
+  const resume = etatHistorique()[depuis];
+  const lot = [pile.pop()];
+  while (lot[0].groupe && pile.length && pile[pile.length - 1].groupe === lot[0].groupe) lot.push(pile.pop());
+  const sauvegarde = { posts: [...db.posts], evenements: [...db.evenements] };
+  try {
+    for (const entree of lot) {
+      for (const type of TYPES_HISTORIQUE) {
+        for (const c of entree[type]) {
+          const i = db[type].findIndex((x) => x.id === c.id);
+          if (c[cote] === null) { if (i >= 0) db[type].splice(i, 1); }
+          else if (i >= 0) db[type][i] = cloneJson(c[cote]);
+          else db[type].push(cloneJson(c[cote]));
+        }
+      }
+    }
+    saveDb();
+  } catch (err) {
+    db.posts = sauvegarde.posts;
+    db.evenements = sauvegarde.evenements;
+    pile.push(...lot.reverse());
+    throw err;
+  }
+  historique[vers].push(...lot);
+  enregistrerHistorique();
+  return { libelle: resume.libelle, historique: etatHistorique() };
+}
 
 const byDate = (a, b) =>
   (a.datePublication || '').localeCompare(b.datePublication || '') ||
@@ -561,10 +705,7 @@ function fusionnerPosts(body) {
   photos.linkedin = pb.linkedin.length ? pb.linkedin : pa.linkedin;
   fusion.photos = photos;
 
-  // Les fichiers photo qui ne servent plus à personne sont supprimés une fois les données enregistrées.
-  const gardes = new Set(toutesLesPhotos(photos).map((f) => f.fichier));
-  const aSupprimer = [...toutesLesPhotos(pb), ...toutesLesPhotos(pa)].filter((f) => !gardes.has(f.fichier));
-
+  // Les images écartées restent sur le disque tant que l'historique permet d'annuler la fusion.
   const avant = db.posts;
   db.posts = avant.filter((p) => p !== autre).map((p) => (p === base ? fusion : p));
   try {
@@ -573,7 +714,6 @@ function fusionnerPosts(body) {
     db.posts = avant;
     throw err;
   }
-  aSupprimer.forEach(supprimerFichierPhoto);
   return { post: fusion, supprime: autre.id };
 }
 
@@ -822,11 +962,35 @@ async function buildWorkbook(posts, { photos = true } = {}) {
 /* ------------------------------------------------------------------ */
 
 const routes = [];
-const route = (method, pattern, handler) => routes.push({ method, pattern, handler });
+const route = (method, pattern, handler, options = {}) => routes.push({ method, pattern, handler, ...options });
+
+/** Normalise le résultat d'une route : le corps seul pour un appel interne (l'agent). */
+async function appelerRoute(method, chemin, { body, query = {}, meta } = {}) {
+  const r = routes.find((x) => x.method === method && x.pattern.test(chemin));
+  if (!r) throw new HttpError(404, 'Route inconnue.');
+  const executer = () => r.handler({ params: chemin.match(r.pattern).slice(1), query, body });
+  const resultat = await (method === 'GET' ? executer() : avecHistorique(executer, meta));
+  return resultat && resultat.status && resultat.body !== undefined ? resultat.body : resultat;
+}
+
+const agent = creerAgent({ dataDir: DATA_DIR, HttpError, appelerRoute, instantLocal });
 
 route('GET', /^\/api\/health$/, () => ({ ok: true }));
 
+/* Historique et agent IA : ces routes ne sont pas elles-mêmes des modifications à mémoriser */
+const SANS_HISTORIQUE = { sansHistorique: true };
+route('GET', /^\/api\/historique$/, () => etatHistorique());
+route('POST', /^\/api\/historique\/annuler$/, () => parcourirHistorique('annuler', 'retablir', 'avant', 'annuler'), SANS_HISTORIQUE);
+route('POST', /^\/api\/historique\/retablir$/, () => parcourirHistorique('retablir', 'annuler', 'apres', 'rétablir'), SANS_HISTORIQUE);
+route('GET', /^\/api\/agent\/reglages$/, () => agent.publics());
+route('PUT', /^\/api\/agent\/reglages$/, ({ body }) => agent.modifier(body), SANS_HISTORIQUE);
+route('GET', /^\/api\/agent\/modeles$/, ({ query }) => agent.listerModeles(query.fournisseur));
+route('POST', /^\/api\/agent\/tester$/, () => agent.tester(), SANS_HISTORIQUE);
+route('POST', /^\/api\/agent\/message$/, ({ body }) => agent.discuter(body), SANS_HISTORIQUE);
+route('POST', /^\/api\/agent\/confirmer$/, ({ body }) => agent.confirmer(body), SANS_HISTORIQUE);
+
 route('GET', /^\/api\/state$/, () => ({
+  historique: etatHistorique(),
   evenements: [...db.evenements].sort((a, b) => a.dateDebut.localeCompare(b.dateDebut) || a.nom.localeCompare(b.nom)),
   posts: [...db.posts].sort(byDate),
   statuts: STATUT_LIBELLES,
@@ -930,8 +1094,7 @@ route('DELETE', /^\/api\/posts\/([\w-]+)$/, ({ params }) => {
   const i = db.posts.findIndex((p) => p.id === params[0]);
   if (i < 0) throw new HttpError(404, 'Post introuvable.');
   const [removed] = db.posts.splice(i, 1);
-  saveDb();
-  toutesLesPhotos(removed.photos).forEach(supprimerFichierPhoto);
+  saveDb(); // ses images restent sur le disque tant que l'historique permet d'annuler la suppression
   return { ok: true, supprime: removed.id };
 });
 
@@ -972,7 +1135,6 @@ route('DELETE', /^\/api\/posts\/([\w-]+)\/photo\/(meta|linkedin)(?:\/([\w.-]+))?
   }
   post.photos[slot] = anciennes.filter((f) => !retirees.includes(f));
   saveDb();
-  retirees.forEach(supprimerFichierPhoto);
   return post;
 });
 
@@ -1129,7 +1291,8 @@ async function handle(req, res) {
       throw new HttpError(415, 'Content-Type application/json requis.');
     }
     const body = hasBody ? await readBody(req) : undefined;
-    const result = await r.handler({ params: match.slice(1), query, body });
+    const executer = () => r.handler({ params: match.slice(1), query, body });
+    const result = await (req.method === 'GET' || r.sansHistorique ? executer() : avecHistorique(executer));
     if (result && result.raw && result.inline) {
       res.writeHead(200, {
         ...SECURITY_HEADERS,
@@ -1168,6 +1331,7 @@ const server = http.createServer((req, res) => {
 
 if (require.main === module) {
   loadDb();
+  chargerHistorique();
   publierPostsEchus();
   // Même sans visite, le fichier de données est tenu à jour : on vérifie les échéances chaque minute.
   setInterval(() => publierPostsEchus(), 60_000).unref();

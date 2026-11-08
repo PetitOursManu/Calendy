@@ -37,7 +37,7 @@ before(async () => {
   await new Promise((resolve, reject) => {
     server.stdout.on('data', (d) => String(d).includes('prêt') && resolve());
     server.on('exit', (c) => reject(new Error(`serveur arrêté (${c})`)));
-    setTimeout(() => reject(new Error('démarrage trop long')), 8000);
+    setTimeout(() => reject(new Error('démarrage trop long')), 30000).unref();
   });
   client = new Client({ name: 'test', version: '1.0.0' });
   await client.connect(

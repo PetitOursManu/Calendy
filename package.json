@@ -5,12 +5,13 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/api.test.js test/mcp.test.js",
+    "test": "node --test test/api.test.js test/mcp.test.js test/agent.test.js",
     "build:mcp": "esbuild mcp.js --bundle --platform=node --format=cjs --target=node20 --outfile=dist/calendy-mcp.js --log-level=warning",
     "test:bundle": "MCP_ENTRY=dist/calendy-mcp.js node --test test/mcp.test.js"
   },
   "license": "UNLICENSED",
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "exceljs": "^4.4.0"
   },
   "devDependencies": {

@@ -374,6 +374,55 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 .mg-auto dd{display:inline;overflow-wrap:anywhere}
 .mg-auto small{color:var(--mute)}
 @media (max-width:640px){.mg-pair{grid-template-columns:1fr}}
+
+/* ---------- dock : annuler, rétablir, agent IA (suit la fenêtre ouverte, voir placerDock) ---------- */
+#dock{position:fixed;right:18px;bottom:18px;z-index:70;display:flex;flex-direction:column;align-items:flex-end;gap:10px;color:var(--ink);font-size:15px}
+.dock-btns{display:flex;align-items:center;gap:8px}
+.dock-btns .icon-btn{width:42px;height:42px;box-shadow:0 3px 12px rgba(22,36,43,.2)}
+.dock-btns .icon-btn:disabled{opacity:.45;cursor:not-allowed;border-color:var(--line-strong)}
+.ia-fab{display:grid;place-items:center;width:54px;height:54px;border-radius:50%;border:0;background:var(--denim);color:#fff;font-size:25px;box-shadow:0 6px 20px rgba(22,36,43,.35)}
+.ia-fab:hover{background:var(--denim-ink)}
+.ia-panel{display:flex;flex-direction:column;width:min(390px,calc(100vw - 32px));height:min(580px,calc(100dvh - 110px));background:var(--surface);border:1px solid var(--line-strong);border-radius:14px;box-shadow:0 14px 44px rgba(22,36,43,.32);overflow:hidden}
+.ia-head{display:flex;align-items:center;gap:6px;padding:9px 10px 9px 15px;background:var(--denim);color:#fff}
+.ia-head strong{flex:1;min-width:0;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ia-head button{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:7px;background:none;color:#fff;font-size:18px}
+.ia-head button:hover{background:rgba(255,255,255,.18)}
+.ia-head :focus-visible{outline-color:#fff}
+.ia-ctx{padding:6px 15px;background:var(--denim-pale);color:var(--denim-ink);font-size:13.5px;font-weight:700;border-bottom:1px solid var(--denim-wash);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ia-log{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--soft)}
+.ia-msg{max-width:88%;padding:8px 12px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.42}
+.ia-msg.user{align-self:flex-end;background:var(--denim);color:#fff;border-bottom-right-radius:3px}
+.ia-msg.assistant{align-self:flex-start;background:var(--surface);border:1px solid var(--line);border-bottom-left-radius:3px}
+.ia-msg.erreur{align-self:stretch;max-width:none;background:var(--refuse-bg);color:var(--refuse);font-weight:700}
+.ia-actions{list-style:none;margin:7px 0 0;padding:7px 0 0;border-top:1px solid var(--line);display:grid;gap:3px;font-size:13.5px;color:var(--valide)}
+.ia-actions li{display:flex;gap:6px;align-items:flex-start;white-space:normal}
+.ia-actions .ic{margin-top:3px}
+.ia-lien{border:0;background:none;padding:0;margin-top:5px;color:var(--denim);font-weight:700;font-size:13.5px;text-decoration:underline}
+.ia-confirm{align-self:stretch;display:grid;gap:7px;padding:10px 12px;border:1.5px solid var(--refuse-line);border-radius:10px;background:var(--surface)}
+.ia-confirm p{overflow-wrap:anywhere}
+.ia-confirm .boutons{display:flex;gap:8px}
+.ia-confirm.clos{border-color:var(--line);color:var(--mute)}
+.ia-vide{margin:auto;max-width:30ch;display:grid;gap:10px;justify-items:center;text-align:center;color:var(--mute)}
+.ia-attente{align-self:flex-start;color:var(--mute);font-size:14px;animation:ia-pulse 1.2s ease-in-out infinite}
+@keyframes ia-pulse{50%{opacity:.45}}
+.ia-sugg{display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px 0;background:var(--surface);border-top:1px solid var(--line)}
+.ia-saisie{display:flex;align-items:flex-end;gap:8px;padding:10px 12px;background:var(--surface)}
+.ia-sugg:empty{display:none}
+.ia-sugg:empty+.ia-saisie{border-top:1px solid var(--line)}
+.ia-saisie textarea{flex:1;min-width:0;min-height:44px;max-height:130px;resize:none}
+/* la fiche occupe la droite de l'écran : l'agent se place à côté, pour garder le bouton Enregistrer visible */
+@media (min-width:1001px){dialog.drawer>#dock{right:calc(min(580px,100vw) + 16px)}dialog.drawer>#toast{left:18px;transform:none;max-width:min(520px,calc(100vw - 840px))}}
+@media (max-width:1000px){dialog.drawer>#dock{bottom:76px}dialog.drawer>#dock .ia-panel{height:min(580px,calc(100dvh - 170px))}dialog.drawer>#toast{bottom:136px}}
+@media (max-width:560px){#toast{bottom:84px}.tabs{flex-wrap:wrap}.tab{padding:6px 10px}}
+
+/* ---------- réglages ---------- */
+.sous-onglets{display:flex;gap:4px;margin:0 0 16px;border-bottom:1px solid var(--line-strong);padding-bottom:8px}
+.reglages{display:grid;gap:18px;max-width:680px;padding:20px;background:var(--surface);border-radius:12px}
+.reglages h3{font-size:19px}
+.reglages .boutons{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.reglages .etat{font-weight:700}
+.reglages .etat.ok{color:var(--valide)}
+.reglages .etat.ko{color:var(--refuse)}
 </style>
 </head>
 <body>
@@ -395,6 +444,9 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
   <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></symbol>
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/></symbol>
   <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v3c0 3 3 5 6 5s6-2 6-5V4M12 12v8M9 17l3 3 3-3"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 5L3.5 9.5 8 14M4 9.5h10a5.5 5.5 0 0 1 0 11H9"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16 5l4.5 4.5L16 14M20 9.5H10a5.5 5.5 0 0 0 0 11h5"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L4 10.500l5.100-1.900zM18.500 15.500l.8 2.200 2.200.8-2.200.8-.8 2.200-.8-2.200-2.200-.8 2.200-.8z"/></symbol>
 </svg>
 
 <div id="banner" role="alert" hidden>Connexion au serveur perdue. Les modifications ne sont pas enregistrées tant qu’elle ne revient pas.</div>
@@ -405,6 +457,7 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
     <button class="tab" data-action="view" data-view="calendrier">Calendrier</button>
     <button class="tab" data-action="view" data-view="valider">À valider <span class="badge" id="badge">0</span></button>
     <button class="tab" data-action="view" data-view="evenements">Événements</button>
+    <button class="tab" data-action="view" data-view="reglages">Réglages</button>
   </nav>
   <div class="top-actions">
     <button class="btn" data-action="new-post"><svg class="ic"><use href="#i-plus"/></svg>Nouveau post</button>
@@ -420,6 +473,27 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 <dialog id="actionDlg" class="modal" aria-labelledby="actionTitle"></dialog>
 <dialog id="photoDlg" class="lightbox" aria-labelledby="photoCap"></dialog>
 <div id="toast" role="status" aria-live="polite" hidden></div>
+<div id="dock">
+  <section class="ia-panel" id="iaPanel" aria-labelledby="iaNom" hidden>
+    <header class="ia-head">
+      <strong id="iaNom">Assistant Calendy</strong>
+      <button type="button" data-action="ia-nouveau" title="Nouvelle conversation" aria-label="Nouvelle conversation"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <button type="button" data-action="ia-basculer" title="Réduire" aria-label="Réduire la discussion"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </header>
+    <p class="ia-ctx" id="iaCtx" hidden></p>
+    <div class="ia-log" id="iaLog" role="log" aria-live="polite"></div>
+    <div class="ia-sugg" id="iaSugg"></div>
+    <form class="ia-saisie" id="iaSaisie">
+      <textarea name="texte" rows="2" maxlength="4000" aria-label="Message à l’agent" placeholder="Demande quelque chose…"></textarea>
+      <button type="submit" class="btn primary" aria-label="Envoyer"><svg class="ic" aria-hidden="true"><use href="#i-sent"/></svg></button>
+    </form>
+  </section>
+  <div class="dock-btns">
+    <button type="button" class="icon-btn" id="histAnnuler" data-action="hist-annuler" aria-label="Annuler" disabled><svg class="ic" aria-hidden="true"><use href="#i-undo"/></svg></button>
+    <button type="button" class="icon-btn" id="histRetablir" data-action="hist-retablir" aria-label="Rétablir" disabled><svg class="ic" aria-hidden="true"><use href="#i-redo"/></svg></button>
+    <button type="button" class="ia-fab" id="iaFab" data-action="ia-basculer" aria-label="Ouvrir l’agent IA" aria-expanded="false" aria-controls="iaPanel" hidden><svg class="ic" aria-hidden="true"><use href="#i-spark"/></svg></button>
+  </div>
+</div>
 <noscript><p style="padding:24px">Calendy a besoin de JavaScript pour fonctionner.</p></noscript>
 
 <script>
@@ -476,7 +550,7 @@ const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Numbe
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* ================= état ================= */
-const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', evVue: 'liste', evMois: todayIso().slice(0, 7), loaded: false, sig: '' };
+const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', evVue: 'liste', evMois: todayIso().slice(0, 7), loaded: false, sig: '', historique: { annuler: null, retablir: null }, agent: null };
 const evById = (id) => state.evenements.find((e) => e.id === id);
 const postById = (id) => state.posts.find((p) => p.id === id);
 const parHeure = (a, b) => (a.heure || '').localeCompare(b.heure || '') || a.titre.localeCompare(b.titre);
@@ -543,6 +617,8 @@ async function refresh() {
   const data = await api('GET', '/api/state');
   const sig = JSON.stringify([data.evenements, data.posts]);
   state.loaded = true;
+  state.historique = data.historique || state.historique;
+  majHistorique();
   if (sig === state.sig && state.rendered) return;
   state.sig = sig;
   state.evenements = data.evenements;
@@ -880,6 +956,7 @@ function render() {
   });
   const main = $('#main');
   if (!state.loaded) { main.innerHTML = '<p class="loading">Chargement du calendrier…</p>'; return; }
+  if (state.view === 'reglages') { afficherReglages(main); return; }
   main.innerHTML = state.view === 'calendrier' ? calendarView() : state.view === 'valider' ? validateView() : eventsView();
   hydratePhotos(main);
 }
@@ -1345,20 +1422,17 @@ async function deleteCurrent(form) {
     $('#drawer')._dirty = false;
     $('#drawer').close();
     await refresh();
-    toast(kind === 'post' ? 'Post supprimé.' : `Événement supprimé${res.postsDetaches ? `, ${res.postsDetaches} post(s) conservé(s) sans événement` : ''}.`);
+    toast(kind === 'post' ? 'Post supprimé.' : `Événement supprimé${res.postsDetaches ? `, ${res.postsDetaches} post(s) conservé(s) sans événement` : ''}.`, { undo: annulerDernier });
   } catch (err) { formError(form, err.message); }
 }
 
 async function setStatut(id, statut) {
   const p = postById(id);
   if (!p) return;
-  const avant = p.statut;
   await api('PUT', `/api/posts/${id}`, { statut });
   await refresh();
   const verbe = { valide: 'validé', planifie: 'planifié', refuse: 'refusé', publie: 'publié', idee: 'remis à valider' }[statut];
-  toast(`« ${p.titre.length > 48 ? `${p.titre.slice(0, 47)}…` : p.titre} » ${verbe}.`, {
-    undo: () => guard(async () => { await api('PUT', `/api/posts/${id}`, { statut: avant }); await refresh(); toast('Changement annulé.'); }),
-  });
+  toast(`« ${p.titre.length > 48 ? `${p.titre.slice(0, 47)}…` : p.titre} » ${verbe}.`, { undo: annulerDernier });
 }
 
 /* ================= export Excel ================= */
@@ -1495,13 +1569,10 @@ function montrerDate(iso) {
 async function deplacerPost(id, date) {
   const p = postById(id);
   if (!p || p.datePublication === date) return;
-  const avant = p.datePublication;
   await api('PUT', `/api/posts/${id}`, { datePublication: date });
   await actionTerminee();
   montrerDate(date);
-  toast(`« ${titreCourt(p.titre)} » déplacé au ${dateAvecJour(date)}.`, {
-    undo: () => guard(async () => { await api('PUT', `/api/posts/${id}`, { datePublication: avant }); await refresh(); toast('Changement annulé.'); }),
-  });
+  toast(`« ${titreCourt(p.titre)} » déplacé au ${dateAvecJour(date)}.`, { undo: annulerDernier });
 }
 
 function openDeplacer(id) {
@@ -1533,7 +1604,7 @@ async function clonerVers(id, dates) {
   toast(clones.length === 1
     ? `Copie de « ${titre} » créée le ${dateAvecJour(clones[0].datePublication)}, à valider.`
     : `${clones.length} copies de « ${titre} » créées, à valider.`, {
-    undo: () => guard(async () => { await Promise.all(clones.map((c) => api('DELETE', `/api/posts/${c.id}`))); await refresh(); toast(clones.length === 1 ? 'Copie annulée.' : 'Copies annulées.'); }),
+    undo: annulerDernier,
   });
 }
 
@@ -1702,7 +1773,7 @@ function openFusionChoix(idA, idB) {
       const res = await api('POST', '/api/posts/fusionner', { ids: [idA, idB], garder: idA, choix });
       await actionTerminee();
       montrerDate(res.post.datePublication);
-      toast(`Posts fusionnés : « ${titreCourt(res.post.titre)} » est prévu sur ${listeFr(res.post.plateformes)}.`);
+      toast(`Posts fusionnés : « ${titreCourt(res.post.titre)} » est prévu sur ${listeFr(res.post.plateformes)}.`, { undo: annulerDernier });
     });
   });
 }
@@ -1752,6 +1823,423 @@ document.addEventListener('drop', (e) => {
   guard(() => (copie ? clonerVers(id, [date]) : deplacerPost(id, date)));
 });
 document.addEventListener('dragend', finGlisse);
+
+/* ================= annuler / rétablir (historique du serveur) ================= */
+function majHistorique() {
+  for (const [sens, id, verbe, raccourci] of [['annuler', 'histAnnuler', 'Annuler', 'Ctrl+Z'], ['retablir', 'histRetablir', 'Rétablir', 'Ctrl+Y']]) {
+    const b = $(`#${id}`);
+    const h = state.historique[sens];
+    const texte = h ? `${verbe} : ${h.libelle} (${raccourci})` : `${verbe} (${raccourci}) : rien pour le moment`;
+    b.disabled = !h;
+    b.title = texte;
+    b.setAttribute('aria-label', texte);
+  }
+}
+
+const CHAMPS_FICHE = { post: ['titre', 'datePublication', 'heure', 'plateformes', 'eventId', 'description', 'hashtags', 'imageIdee', 'atelier', 'angle', 'vigilance', 'statut'], event: ['nom', 'dateDebut', 'dateFin', 'explication', 'lienElisa30'] };
+const ficheOuverte = () => { const dlg = $('#drawer'); return dlg.open ? dlg.querySelector('form[data-form=post],form[data-form=event]') : null; };
+const elementDe = (kind, id) => (kind === 'post' ? postById(id) : evById(id));
+
+function ecrireChamp(form, nom, valeur) {
+  if (nom === 'plateformes') {
+    form.querySelectorAll('input[name=plateformes]').forEach((i) => { i.checked = (valeur || []).includes(i.value); });
+    photoSlotsSync(form);
+    updateCount(form);
+    return;
+  }
+  const el = form.elements[nom];
+  if (!el) return;
+  el.value = valeur ?? '';
+  const cible = el instanceof RadioNodeList ? el[0] : el;
+  // Ces événements repeignent le surlignage et les compteurs ; le champ `_dirty` est rétabli par l'appelant.
+  cible.dispatchEvent(new Event('input', { bubbles: true }));
+  cible.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+/**
+ * Recharge le calendrier, puis reporte dans la fiche ouverte ce qui a changé sur le serveur (agent, annulation).
+ * Seuls les champs modifiés sont réécrits : une saisie en cours sur un autre champ n'est pas perdue.
+ */
+async function resynchroniser() {
+  const form = ficheOuverte();
+  const id = form && form.dataset.id;
+  const kind = form && form.dataset.form;
+  const avant = id ? elementDe(kind, id) : null;
+  await refresh();
+  if (!id || !form.isConnected) return;
+  const dlg = $('#drawer');
+  const apres = elementDe(kind, id);
+  if (!apres) {
+    dlg._dirty = false;
+    dlg.close();
+    toast(kind === 'post' ? 'Ce post n’existe plus.' : 'Cet événement n’existe plus.', { undo: annulerDernier });
+    return;
+  }
+  if (!avant) return;
+  const brouillon = dlg._dirty;
+  for (const champ of CHAMPS_FICHE[kind]) {
+    if (JSON.stringify(avant[champ]) === JSON.stringify(apres[champ])) continue;
+    ecrireChamp(form, champ, champ === 'dateFin' && apres.dateFin === apres.dateDebut ? '' : apres[champ]);
+  }
+  if (kind === 'post' && JSON.stringify(avant.photos) !== JSON.stringify(apres.photos)) {
+    for (const s of Object.keys(SLOTS)) {
+      const fichiers = listePhotos(apres, s).map((f) => f.fichier);
+      const st = dlg._photos[s];
+      st.items = [...fichiers.map((fichier) => ({ fichier })), ...st.items.filter((it) => it.blob)];
+      st.base = fichiers;
+      photoSlotRefresh(form, s);
+    }
+  }
+  dlg._dirty = brouillon;
+}
+
+let historiqueOccupe = false;
+async function parcourirHistorique(sens) {
+  if (historiqueOccupe) return;
+  historiqueOccupe = true;
+  try {
+    const r = await api('POST', `/api/historique/${sens}`, {});
+    state.historique = r.historique;
+    majHistorique();
+    await resynchroniser();
+    toast(`${sens === 'annuler' ? 'Annulé' : 'Rétabli'} : ${r.libelle}.`);
+  } finally {
+    historiqueOccupe = false;
+  }
+}
+function annulerDernier() { guard(() => parcourirHistorique('annuler')); }
+
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = e.key.toLowerCase();
+  const annuler = k === 'z' && !e.shiftKey;
+  const retablir = k === 'y' || (k === 'z' && e.shiftKey);
+  if (!annuler && !retablir) return;
+  // Dans un champ de saisie, Ctrl+Z garde son rôle habituel : annuler la frappe.
+  if (e.target instanceof Element && e.target.closest('textarea,input:not([type=checkbox]):not([type=radio]),select,[contenteditable]')) return;
+  if ($('#tokenDlg').open) return;
+  e.preventDefault();
+  const sens = annuler ? 'annuler' : 'retablir';
+  if (state.historique[sens]) guard(() => parcourirHistorique(sens));
+});
+
+/* ---- le dock doit rester utilisable au-dessus d'une fenêtre modale : on le place dans la fenêtre du dessus ---- */
+const FENETRES = ['drawer', 'exportDlg', 'actionDlg', 'photoDlg', 'tokenDlg'];
+let fenetresOuvertes = [];
+// Références gardées : le contenu d'une fenêtre peut être remplacé alors que le dock s'y trouve encore.
+const dock = $('#dock');
+const toastEl = $('#toast');
+function placerDock() {
+  for (const id of FENETRES) {
+    const ouverte = $(`#${id}`).open;
+    if (ouverte && !fenetresOuvertes.includes(id)) fenetresOuvertes.push(id);
+    if (!ouverte) fenetresOuvertes = fenetresOuvertes.filter((x) => x !== id);
+  }
+  const dessus = fenetresOuvertes.filter((id) => id !== 'photoDlg' && id !== 'tokenDlg').pop();
+  const parent = dessus ? $(`#${dessus}`) : document.body;
+  if (dock.parentElement !== parent) {
+    const focus = dock.contains(document.activeElement) ? document.activeElement : null;
+    parent.append(toastEl, dock);
+    if (focus) focus.focus();
+  }
+  majContexteIa();
+}
+const observateurFenetres = new MutationObserver(placerDock);
+for (const id of FENETRES) observateurFenetres.observe($(`#${id}`), { attributes: true, attributeFilter: ['open'], childList: true });
+
+/* ================= agent IA : discussion ================= */
+const chat = { ouvert: false, encours: false, messages: [] };
+const agentPret = () => {
+  const a = state.agent;
+  return Boolean(a && a.cles[a.fournisseur].definie && a.modeles[a.fournisseur]);
+};
+
+function majDockAgent() {
+  const a = state.agent;
+  const fab = $('#iaFab');
+  fab.hidden = !(a && a.actif);
+  if (fab.hidden && chat.ouvert) basculerChat(false);
+  if (a) {
+    $('#iaNom').textContent = a.nom;
+    fab.title = a.nom;
+    fab.setAttribute('aria-label', `Ouvrir ${a.nom}`);
+  }
+}
+
+function majContexteIa() {
+  const ctx = $('#iaCtx');
+  const sugg = $('#iaSugg');
+  const form = ficheOuverte();
+  if (!form) {
+    ctx.hidden = true;
+    sugg.innerHTML = '';
+    return;
+  }
+  const estPost = form.dataset.form === 'post';
+  const nom = form.elements[estPost ? 'titre' : 'nom'].value.trim();
+  ctx.textContent = `${estPost ? 'Post ouvert' : 'Événement ouvert'} : ${nom || 'nouveau, pas encore enregistré'}`;
+  ctx.hidden = false;
+  sugg.innerHTML = estPost && agentPret() ? `<button type="button" class="btn small" data-action="ia-suggestion" data-texte="Corrige les fautes d’orthographe et de grammaire de ce post.">Corriger les fautes</button>` : '';
+}
+
+function basculerChat(ouvrir = !chat.ouvert) {
+  chat.ouvert = ouvrir;
+  $('#iaPanel').hidden = !ouvrir;
+  $('#iaFab').setAttribute('aria-expanded', String(ouvrir));
+  if (ouvrir) {
+    majContexteIa();
+    dessinerChat();
+    $('#iaSaisie textarea').focus();
+  } else if (!$('#iaFab').hidden) {
+    $('#iaFab').focus();
+  }
+}
+
+function dessinerChat() {
+  const log = $('#iaLog');
+  const dernierAvecActions = chat.messages.map((m) => Boolean(m.annulable)).lastIndexOf(true);
+  let html = chat.messages.map((m, i) => {
+    if (m.role === 'erreur') return `<div class="ia-msg erreur">${esc(m.texte)}</div>`;
+    if (m.role === 'user') return `<div class="ia-msg user">${esc(m.texte)}</div>`;
+    const actions = m.actions && m.actions.length ? `<ul class="ia-actions">${m.actions.map((a) => `<li>${icon('i-check')}<span>${esc(a)}</span></li>`).join('')}</ul>` : '';
+    const annuler = i === dernierAvecActions && state.historique.annuler ? '<button type="button" class="ia-lien" data-action="hist-annuler">Annuler ces modifications</button>' : '';
+    const confirmations = (m.confirmations || []).map((c) => (c.resultat
+      ? `<div class="ia-confirm clos"><p>${esc(c.detail)}</p><p><strong>${esc(c.resultat)}</strong></p></div>`
+      : `<div class="ia-confirm"><p><strong>${esc(c.libelle)}</strong></p><p>${esc(c.detail)}</p><div class="boutons"><button type="button" class="btn small no" data-action="ia-confirmer" data-m="${i}" data-id="${esc(c.id)}" data-accepter="1">Confirmer</button><button type="button" class="btn small" data-action="ia-confirmer" data-m="${i}" data-id="${esc(c.id)}">Ne pas le faire</button></div></div>`)).join('');
+    return `<div class="ia-msg assistant">${esc(m.texte)}${actions}${annuler}</div>${confirmations}`;
+  }).join('');
+  if (!agentPret()) {
+    html = `<div class="ia-vide"><p>L’agent n’est pas encore configuré. Ajoute une clé API et choisis un modèle.</p><button type="button" class="btn primary" data-action="ia-reglages">Ouvrir les réglages</button></div>`;
+  } else if (!html) {
+    html = '<div class="ia-vide"><p>Demande-moi d’ajouter un post, de déplacer un événement, de valider des idées ou de corriger un texte.</p></div>';
+  }
+  if (chat.encours) html += '<div class="ia-attente">L’agent réfléchit…</div>';
+  log.innerHTML = html;
+  log.scrollTop = log.scrollHeight;
+}
+
+function contexteAgent() {
+  const c = { vue: state.view, mois: state.month };
+  const form = ficheOuverte();
+  if (form) {
+    const fd = new FormData(form);
+    const valeurs = {};
+    for (const k of new Set(fd.keys())) valeurs[k] = k === 'plateformes' ? fd.getAll(k) : fd.get(k);
+    c.ouvert = { type: form.dataset.form === 'post' ? 'post' : 'evenement', id: form.dataset.id || null, valeurs };
+  }
+  return c;
+}
+
+/** Ce que le modèle relit au tour suivant : le texte, plus le rappel des actions qui ne sont pas dans les mots de la réponse. */
+const messagesPourApi = () => chat.messages.filter((m) => m.role !== 'erreur').map((m) => ({
+  role: m.role,
+  content: `${m.texte}${m.memoire ? `\n\n[Actions effectuées : ${m.memoire}]` : ''}`,
+}));
+
+async function envoyerAgent(texte) {
+  const propre = String(texte || '').trim();
+  if (!propre || chat.encours) return false;
+  chat.messages.push({ role: 'user', texte: propre });
+  chat.encours = true;
+  dessinerChat();
+  try {
+    const r = await api('POST', '/api/agent/message', { messages: messagesPourApi(), contexte: contexteAgent() });
+    chat.messages.push({ role: 'assistant', texte: r.reponse, actions: r.actions, confirmations: r.confirmations, memoire: r.actions.join(' ; '), annulable: r.actions.length > 0 });
+    if (r.formulaire) {
+      const form = ficheOuverte();
+      if (form) {
+        for (const [champ, valeur] of Object.entries(r.formulaire)) ecrireChamp(form, champ, valeur);
+        $('#drawer')._dirty = true;
+      }
+    }
+    if (r.actions.length) await resynchroniser();
+  } catch (err) {
+    chat.messages.push({ role: 'erreur', texte: err.message || 'Une erreur est survenue.' });
+  } finally {
+    chat.encours = false;
+    dessinerChat();
+  }
+  return true;
+}
+
+async function repondreConfirmation(iMessage, id, accepter) {
+  const m = chat.messages[iMessage];
+  const c = m && (m.confirmations || []).find((x) => x.id === id);
+  if (!c || c.resultat) return;
+  try {
+    const r = await api('POST', '/api/agent/confirmer', { id, accepter });
+    c.resultat = r.message;
+    m.memoire = [m.memoire, `${c.detail} : ${r.message}`].filter(Boolean).join(' ; ');
+    if (r.fait) {
+      m.annulable = true;
+      await resynchroniser();
+    }
+  } catch (err) {
+    c.resultat = err.message || 'Action impossible.';
+  }
+  dessinerChat();
+}
+
+$('#iaSaisie').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const champ = e.target.elements.texte;
+  const texte = champ.value;
+  if (!texte.trim() || chat.encours) return;
+  champ.value = '';
+  await envoyerAgent(texte);
+  champ.focus();
+});
+$('#iaSaisie textarea').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  const champ = e.target;
+  const texte = champ.value;
+  if (!texte.trim() || chat.encours) return;
+  champ.value = '';
+  envoyerAgent(texte);
+});
+$('#iaPanel').addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  e.preventDefault();
+  e.stopPropagation(); // Échap replie la discussion sans fermer la fiche ouverte derrière
+  basculerChat(false);
+});
+
+/* ================= réglages ================= */
+const iaChargerModeles = new Map();
+
+function afficherReglages(main) {
+  if (main.querySelector('#reglagesAgent')) return; // ne pas effacer une saisie en cours à chaque mise à jour du calendrier
+  const a = state.agent;
+  if (!a) { main.innerHTML = '<p class="loading">Chargement des réglages…</p>'; return; }
+  const perm = (n, label, detail) => `<label class="radio"><input type="checkbox" name="perm-${n}"${a.permissions[n] ? ' checked' : ''}><span>${label} <span class="hint">${detail}</span></span></label>`;
+  const effort = (v, l) => `<option value="${v}"${a.effort === v ? ' selected' : ''}>${l}</option>`;
+  const four = (v, l) => `<label class="opt"><input type="radio" name="fournisseur" value="${v}"${a.fournisseur === v ? ' checked' : ''}><span>${l}</span></label>`;
+  main.innerHTML = `<div class="cal-bar"><h2 style="font-size:27px">Réglages</h2></div>
+    <div class="sous-onglets" role="group" aria-label="Sections des réglages"><button type="button" class="tab" aria-current="page">Agent IA</button></div>
+    <form class="reglages" id="reglagesAgent" novalidate>
+      <label class="radio"><input type="checkbox" name="actif"${a.actif ? ' checked' : ''}><strong>Activer l’agent IA</strong></label>
+      <label class="f"><span>Nom de l’agent</span><input type="text" name="nom" maxlength="60" value="${esc(a.nom)}"></label>
+      <fieldset><legend>Fournisseur</legend><div class="pills">${four('anthropic', 'Claude (Anthropic)')}${four('openrouter', 'OpenRouter')}</div></fieldset>
+      <div class="f"><label class="f"><span>Clé API</span><input type="password" name="cle" autocomplete="off" spellcheck="false"></label><p class="hint" id="reglCle"></p>
+        <div><button type="button" class="btn small" data-action="ia-retirer-cle" hidden>Retirer la clé enregistrée</button></div></div>
+      <label class="f"><span>Modèle</span><input type="text" name="modele" list="reglModeles" maxlength="120" spellcheck="false"><datalist id="reglModeles"></datalist><span class="hint" id="reglModeleAide"></span></label>
+      <label class="f" id="reglEffort"><span>Niveau de réflexion</span><select name="effort">${effort('low', 'Rapide et économique')}${effort('medium', 'Équilibré (recommandé)')}${effort('high', 'Approfondi')}</select></label>
+      <label class="f"><span>Instructions pour l’agent <em>facultatif</em></span><textarea name="instructions" rows="5" maxlength="4000" placeholder="Ton à employer, tutoiement ou vouvoiement, règles de rédaction de l’ESAT…">${esc(a.instructions)}</textarea></label>
+      <fieldset><legend>L’agent peut aussi</legend>
+        <p class="hint">Créer, déplacer, modifier et changer le statut restent toujours permis, avec Annuler disponible.</p>
+        ${perm('supprimer', 'Supprimer des posts et des événements', '(après confirmation)')}
+        ${perm('cloner', 'Cloner des posts', '')}
+        ${perm('fusionner', 'Fusionner des posts', '(après confirmation)')}
+        ${perm('images', 'Voir les images des posts', '(transmises au fournisseur d’IA, coût plus élevé)')}
+      </fieldset>
+      <div class="boutons"><button type="submit" class="btn primary">Enregistrer</button><button type="button" class="btn" data-action="ia-tester">Tester la connexion</button><span class="etat" id="reglEtat" role="status"></span></div>
+    </form>`;
+  const form = main.querySelector('#reglagesAgent');
+  form._modeles = { ...a.modeles };
+  form._courant = a.fournisseur;
+  form.addEventListener('change', (e) => { if (e.target.name === 'fournisseur') changerFournisseur(form); });
+  form.addEventListener('submit', (e) => { e.preventDefault(); enregistrerReglages(form).catch(() => {}); });
+  remplirFournisseur(form);
+}
+
+function changerFournisseur(form) {
+  form._modeles[form._courant] = form.elements.modele.value.trim();
+  form._courant = form.elements.fournisseur.value;
+  form.elements.cle.value = '';
+  remplirFournisseur(form);
+}
+
+async function remplirFournisseur(form) {
+  const f = form._courant;
+  const info = state.agent.cles[f];
+  const cle = form.elements.cle;
+  const aide = form.querySelector('#reglCle');
+  cle.disabled = info.source === 'env';
+  cle.placeholder = info.source === 'env' ? '' : info.definie ? '•••••••• (laisser vide pour conserver)' : f === 'anthropic' ? 'sk-ant-…' : 'sk-or-…';
+  aide.textContent = info.source === 'env'
+    ? `La clé vient de la variable ${info.variable} du serveur : elle n’est pas modifiable ici.`
+    : info.definie ? 'Une clé est enregistrée sur le serveur. Elle n’est jamais renvoyée au navigateur.' : `Stockée sur le serveur uniquement. Tu peux aussi définir la variable ${info.variable}.`;
+  form.querySelector('[data-action=ia-retirer-cle]').hidden = info.source !== 'reglages';
+  form.elements.modele.value = form._modeles[f] || '';
+  form.querySelector('#reglEffort').hidden = f !== 'anthropic';
+  const liste = form.querySelector('#reglModeles');
+  const aideModele = form.querySelector('#reglModeleAide');
+  liste.innerHTML = '';
+  aideModele.textContent = f === 'anthropic' ? 'Choisis dans la liste, ou saisis l’identifiant d’un modèle.' : 'Chargement de la liste OpenRouter…';
+  try {
+    if (!iaChargerModeles.has(f)) iaChargerModeles.set(f, api('GET', `/api/agent/modeles?fournisseur=${f}`));
+    const modeles = await iaChargerModeles.get(f);
+    if (form._courant !== f) return;
+    liste.innerHTML = modeles.map((m) => `<option value="${esc(m.id)}">${esc(m.nom)}</option>`).join('');
+    if (f === 'openrouter') aideModele.textContent = `${modeles.length} modèles compatibles avec les outils. Commence à saisir un nom pour filtrer.`;
+  } catch {
+    iaChargerModeles.delete(f);
+    if (form._courant === f) aideModele.textContent = 'Liste indisponible : saisis l’identifiant du modèle (par exemple anthropic/claude-…).';
+  }
+}
+
+function etatReglages(form, message, ok) {
+  const el = form.querySelector('#reglEtat');
+  el.textContent = message;
+  el.className = `etat ${message ? (ok ? 'ok' : 'ko') : ''}`;
+}
+
+async function enregistrerReglages(form) {
+  const f = form._courant;
+  const el = form.elements;
+  const corps = {
+    actif: el.actif.checked,
+    nom: el.nom.value,
+    fournisseur: f,
+    modeles: { [f]: el.modele.value.trim() },
+    effort: el.effort.value,
+    instructions: el.instructions.value,
+    permissions: Object.fromEntries(['supprimer', 'cloner', 'fusionner', 'images'].map((p) => [p, el[`perm-${p}`].checked])),
+  };
+  if (el.cle.value.trim()) corps.cles = { [f]: el.cle.value.trim() };
+  try {
+    state.agent = await api('PUT', '/api/agent/reglages', corps);
+  } catch (err) {
+    etatReglages(form, err.message, false);
+    throw err;
+  }
+  form._modeles = { ...state.agent.modeles };
+  el.cle.value = '';
+  remplirFournisseur(form);
+  majDockAgent();
+  majContexteIa();
+  if (chat.ouvert) dessinerChat();
+  etatReglages(form, 'Réglages enregistrés.', true);
+}
+
+async function testerReglages(form, bouton) {
+  bouton.disabled = true;
+  etatReglages(form, 'Test en cours…', true);
+  try {
+    await enregistrerReglages(form);
+    etatReglages(form, 'Test en cours…', true);
+    const r = await api('POST', '/api/agent/tester', {});
+    etatReglages(form, r.message, true);
+  } catch (err) {
+    etatReglages(form, err.message, false);
+  } finally {
+    bouton.disabled = false;
+  }
+}
+
+async function retirerCle(form) {
+  state.agent = await api('PUT', '/api/agent/reglages', { cles: { [form._courant]: null } });
+  remplirFournisseur(form);
+  majContexteIa();
+  etatReglages(form, 'Clé retirée.', true);
+}
+
+async function chargerAgent() {
+  state.agent = await api('GET', '/api/agent/reglages');
+  majDockAgent();
+  if (state.view === 'reglages') render();
+}
 
 /* ================= événements du DOM ================= */
 document.addEventListener('click', (e) => {
@@ -1825,6 +2313,22 @@ document.addEventListener('click', (e) => {
       setTimeout(() => { if (t.isConnected) { t.classList.remove('armed'); t.textContent = 'Supprimer'; } }, 5000);
       break;
     case 'undo': { const el = $('#toast'); const fn = el._undo; el.hidden = true; el._undo = null; if (fn) fn(); break; }
+    case 'hist-annuler': annulerDernier(); break;
+    case 'hist-retablir': guard(() => parcourirHistorique('retablir')); break;
+    case 'ia-basculer': basculerChat(); break;
+    case 'ia-nouveau': chat.messages = []; dessinerChat(); $('#iaSaisie textarea').focus(); break;
+    case 'ia-suggestion': envoyerAgent(d.texte); break;
+    case 'ia-confirmer': repondreConfirmation(Number(d.m), d.id, d.accepter === '1'); break;
+    case 'ia-reglages': {
+      const dlg = $('#drawer');
+      if (dlg.open) closeDialog(dlg);
+      if (dlg.open) break; // l'utilisateur a choisi de garder ses modifications
+      state.view = 'reglages';
+      render();
+      break;
+    }
+    case 'ia-tester': testerReglages(t.closest('form'), t); break;
+    case 'ia-retirer-cle': guard(() => retirerCle(t.closest('form'))); break;
     default: break;
   }
 });
@@ -1886,6 +2390,7 @@ document.addEventListener('visibilitychange', poll);
 
 render();
 guard(refresh);
+guard(chargerAgent);
 })();
 </script>
 </body>
