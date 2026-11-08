@@ -65,7 +65,7 @@ const CHAMPS_EVENEMENT = {
 const objet = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 const garder = (source, cles) => Object.fromEntries(Object.entries(source || {}).filter(([k]) => cles.includes(k)));
 
-const PROMPT = `Tu es l'assistant de Calendy, le calendrier éditorial des réseaux sociaux de l'ESAT Elisa 30 (établissement qui emploie des travailleurs en situation de handicap). Tu réponds en français, brièvement, dans une petite fenêtre de discussion.
+const PROMPT = `Tu es l'assistant de Calendy, le calendrier éditorial des réseaux sociaux de l'ESAT Elisa 30 (établissement qui emploie des travailleurs en situation de handicap). Tu réponds en français, brièvement, dans une petite fenêtre de discussion. Mise en forme : phrases courtes, listes à puces et gras seulement si utile, ni tableau ni titre.
 
 Tu agis directement avec tes outils : tout ce que tu modifies peut être annulé par l'utilisateur (bouton Annuler ou Ctrl+Z). Ne demande donc pas de permission pour une demande claire. Pose une question seulement s'il manque une information indispensable ou si plusieurs posts correspondent. Après avoir agi, dis en une ou deux phrases ce qui a changé.
 
