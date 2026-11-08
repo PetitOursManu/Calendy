@@ -75,7 +75,7 @@ button{cursor:pointer}
 #banner{background:var(--refuse);color:#fff;text-align:center;padding:8px 16px;font-weight:700}
 
 /* ---------- pages ---------- */
-.page{max-width:1360px;margin:0 auto;padding:26px 28px 72px}
+.page{max-width:1840px;margin:0 auto;padding:26px 28px 72px;overflow-x:clip}
 .loading,.empty{padding:48px 0;color:var(--mute);text-align:center}
 .empty{display:grid;gap:14px;justify-items:center;max-width:46ch;margin:0 auto}
 .empty::before{content:"";width:112px;height:112px}
@@ -178,9 +178,9 @@ button{cursor:pointer}
 /* ---------- vue « À valider » et événements ---------- */
 .group-title{font-size:20px;font-weight:700;margin:30px 0 12px;letter-spacing:-.01em}
 .group-title:first-child{margin-top:4px}
-.list{display:grid;gap:14px;max-width:920px}
-.mois{max-width:920px;margin:0 0 20px}
-.mois-filtre{display:flex;flex-wrap:wrap;gap:8px;max-width:920px;margin:0 0 20px}
+.list{display:grid;gap:16px;grid-template-columns:repeat(auto-fill,minmax(min(100%,540px),1fr));align-items:start}
+.mois{margin:0 0 22px}
+.mois-filtre{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px}
 .mois-chip{display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 15px;font-weight:700;color:var(--ink)}
 .mois-chip:hover{border-color:var(--line-strong);background:var(--soft)}
 .mois-chip[aria-pressed=true]{background:var(--denim);border-color:var(--denim);color:#fff}
@@ -199,7 +199,9 @@ button{cursor:pointer}
 .mois-btn .pill{margin-left:auto;font-size:13px}
 .mois .list{margin-top:14px}
 @media (prefers-reduced-motion:reduce){.mois-btn::before{transition:none}}
-.card{display:grid;grid-template-columns:76px minmax(0,1fr);gap:6px 20px;padding:20px 22px;background:var(--surface);border-radius:var(--r-l);box-shadow:var(--ombre-1)}
+.card{display:grid;grid-template-columns:76px minmax(0,1fr);gap:6px 20px;padding:20px 22px;background:var(--surface);border-radius:var(--r-l);box-shadow:var(--ombre-1);transition:transform .2s ease,box-shadow .2s ease}
+.card:hover{transform:translateY(-2px);box-shadow:var(--ombre-2)}
+.ev-card:hover{box-shadow:inset 6px 0 0 var(--ev-ink),var(--ombre-2)}
 .card.idea{border:1.5px dashed var(--idee-line)}
 .cdate{text-align:center;line-height:1.15}
 .cdate .n{display:block;font-size:31px;font-weight:700;color:var(--denim-ink);letter-spacing:-.02em}
@@ -226,7 +228,7 @@ mark.br{background:#FFE48A;color:var(--ink);font-weight:700;border-radius:4px;pa
 .ev-card h3{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
 .pill{display:inline-block;padding:1px 11px;border-radius:12px;font-size:13px;font-weight:700;background:var(--soft);color:var(--mute)}
 .pill.warn{background:var(--idee-bg);border:1.5px dashed var(--idee-line);color:var(--idee)}
-.ev-posts{display:grid;gap:6px;margin-top:10px;max-width:520px}
+.ev-posts{display:grid;gap:6px;margin-top:10px;grid-template-columns:repeat(auto-fill,minmax(min(100%,230px),1fr))}
 
 /* ---------- tiroir et fenêtres ---------- */
 dialog{border:0;padding:0;background:var(--surface);color:var(--ink)}
@@ -451,6 +453,78 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 @media (min-width:1001px){dialog.drawer>#dock{right:calc(min(580px,100vw) + 16px)}dialog.drawer>#toast{left:18px;transform:none;max-width:min(520px,calc(100vw - 840px))}}
 @media (max-width:1000px){dialog.drawer>#dock{bottom:76px}dialog.drawer>#dock .ia-panel{height:min(600px,calc(100dvh - 176px))}dialog.drawer>#toast{bottom:140px}}
 @media (max-width:560px){#toast{bottom:92px}.tabs{flex-wrap:wrap}.tab{padding:6px 10px}.tabs .tab>.ic{display:none}dialog.drawer{border-radius:0}}
+
+/* ---------- animations et transitions (toutes désactivées si le système demande de réduire les animations) ---------- */
+@keyframes monte{from{opacity:0;translate:0 14px}}
+@keyframes depuis-droite{from{opacity:0;translate:36px 0}}
+@keyframes depuis-gauche{from{opacity:0;translate:-36px 0}}
+@keyframes pop{from{opacity:0;scale:.92}}
+@keyframes rebond{0%{scale:1}40%{scale:1.35}100%{scale:1}}
+@keyframes flotte{50%{translate:0 -3px}}
+@keyframes anneau{from{box-shadow:0 0 0 0 rgba(35,83,176,.45)}to{box-shadow:0 0 0 18px rgba(35,83,176,0)}}
+@keyframes apparait-tard{0%,75%{opacity:0}}
+@keyframes toast-entre{from{opacity:0;translate:0 14px}}
+@keyframes panneau-entre{from{opacity:0;scale:.9;translate:0 12px}}
+
+/* arrivée sur une page ou un mois */
+.anim-entree>*{animation:monte .38s cubic-bezier(.2,.7,.3,1) both}
+.anim-entree>:nth-child(2){animation-delay:.05s}
+.anim-entree>:nth-child(3){animation-delay:.1s}
+.anim-entree>:nth-child(4){animation-delay:.15s}
+.anim-entree>:nth-child(n+5){animation-delay:.2s}
+.anim-suivant .grid,.anim-suivant .agenda{animation:depuis-droite .34s cubic-bezier(.2,.7,.3,1) both}
+.anim-precedent .grid,.anim-precedent .agenda{animation:depuis-gauche .34s cubic-bezier(.2,.7,.3,1) both}
+.anim-entree .chip-wrap{animation:pop .3s cubic-bezier(.2,.7,.3,1) both;animation-delay:.12s}
+.anim-entree .day:nth-child(7n+2) .chip-wrap{animation-delay:.16s}
+.anim-entree .day:nth-child(7n+3) .chip-wrap{animation-delay:.2s}
+.anim-entree .day:nth-child(7n+4) .chip-wrap{animation-delay:.24s}
+.anim-entree .day:nth-child(7n+5) .chip-wrap{animation-delay:.28s}
+.anim-entree .day:nth-child(7n+6) .chip-wrap{animation-delay:.32s}
+.anim-entree .day:nth-child(7n) .chip-wrap{animation-delay:.36s}
+
+/* les cartes apparaissent en défilant (navigateurs compatibles) */
+@supports (animation-timeline:view()){
+  .list .card{animation:monte linear both;animation-timeline:view();animation-range:entry 0% entry 28%}
+}
+
+/* boutons et champs */
+.btn,.icon-btn,.tab,.filter,.mois-chip,.vue-toggle button,.opt span,.ia-head button,.mois-btn,.add,.pill{transition:background .18s ease,color .18s ease,border-color .18s ease,box-shadow .18s ease,transform .12s ease,opacity .18s ease}
+.btn:active,.icon-btn:active,.tab:active,.filter:active,.mois-chip:active,.vue-toggle button:active,.ia-head button:active,.ia-fab:active{transform:scale(.96)}
+.tab .ic{transition:transform .2s ease}
+.tab:hover .ic{transform:translateY(-2px)}
+.btn .ic{transition:transform .2s ease}
+.btn:hover .ic{transform:scale(1.14)}
+input[type=text]:focus,input[type=date]:focus,input[type=time]:focus,input[type=password]:focus,select:focus,textarea:focus{border-color:var(--denim);box-shadow:0 0 0 3px rgba(35,83,176,.16)}
+input[type=text],input[type=date],input[type=time],input[type=password],select,textarea{transition:border-color .18s ease,box-shadow .18s ease}
+.mois-btn:hover{transform:translateY(-1px)}
+.badge.pop{animation:rebond .4s ease}
+.chip-wrap{transition:opacity .15s ease,transform .15s ease}
+.chip-wrap.dragging{transform:scale(.96) rotate(-1.5deg)}
+.day.drop-ok{transition:background .12s ease}
+.add{transition:opacity .15s ease,background .15s ease,border-color .15s ease,transform .15s ease}
+.add:hover{transform:rotate(90deg)}
+
+/* fenêtres */
+dialog[open]::backdrop{animation:fade .22s ease-out}
+dialog.modal[open]{animation:pop .22s cubic-bezier(.2,.7,.3,1)}
+dialog.drawer[open] .dr-body>*{animation:monte .32s cubic-bezier(.2,.7,.3,1) both}
+dialog.drawer[open] .dr-body>:nth-child(2){animation-delay:.03s}
+dialog.drawer[open] .dr-body>:nth-child(3){animation-delay:.06s}
+dialog.drawer[open] .dr-body>:nth-child(4){animation-delay:.09s}
+dialog.drawer[open] .dr-body>:nth-child(5){animation-delay:.12s}
+dialog.drawer[open] .dr-body>:nth-child(n+6){animation-delay:.15s}
+/* pendant l'arrivée d'une fenêtre, le dock attend qu'elle soit en place : sinon il sauterait d'un endroit à l'autre */
+dialog[open]>#dock{animation:apparait-tard .3s linear}
+
+/* message flottant et agent */
+#toast:not([hidden]){animation:toast-entre .26s cubic-bezier(.2,.7,.3,1)}
+.ia-panel:not([hidden]){transform-origin:bottom right;animation:panneau-entre .24s cubic-bezier(.2,.7,.3,1)}
+.ia-fab{animation:anneau 1.4s ease-out 1s 2}
+.ia-entree{animation:monte .26s cubic-bezier(.2,.7,.3,1) both}
+.ia-ligne:has(.ia-attente) .ia-mascotte{animation:flotte .9s ease-in-out infinite}
+.ia-vide .ia-mascotte.grande,.empty::before{animation:flotte 2.6s ease-in-out infinite}
+.dock-btns .icon-btn{transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .12s ease,opacity .25s ease,color .25s ease}
+.dock-btns .icon-btn:not(:disabled):hover{transform:translateY(-2px)}
 
 /* ---------- réglages ---------- */
 .sous-onglets{display:flex;gap:4px;margin:0 0 18px}
@@ -989,16 +1063,35 @@ async function applyPhotos(id, photos, reseaux, saved) {
 }
 
 /* ================= vues ================= */
+/**
+ * Animation d'arrivée : seulement quand l'écran change vraiment (page, mois, mode d'affichage),
+ * jamais quand le calendrier se réaffiche après une mise à jour automatique.
+ */
+let derniereVue = { cle: '', mois: '', vue: '' };
+function marquerEntree(main) {
+  const mois = state.view === 'evenements' ? state.evMois : state.view === 'calendrier' ? state.month : state.valMois || '';
+  const cle = [state.view, mois, state.valVue, state.evVue, state.reglagesOnglet].join('|');
+  const change = cle !== derniereVue.cle;
+  const memeVue = state.view === derniereVue.vue && mois && derniereVue.mois;
+  main.classList.toggle('anim-entree', change);
+  main.classList.toggle('anim-suivant', Boolean(change && memeVue && mois > derniereVue.mois));
+  main.classList.toggle('anim-precedent', Boolean(change && memeVue && mois < derniereVue.mois));
+  derniereVue = { cle, mois, vue: state.view };
+}
+
 function render() {
   state.rendered = true;
   const ideas = state.posts.filter((p) => p.statut === 'idee').length;
-  $('#badge').textContent = ideas;
-  $('#badge').hidden = ideas === 0;
+  const badge = $('#badge');
+  if (badge.textContent !== String(ideas)) { badge.classList.remove('pop'); void badge.offsetWidth; badge.classList.add('pop'); }
+  badge.textContent = ideas;
+  badge.hidden = ideas === 0;
   document.querySelectorAll('.tabs .tab').forEach((t) => {
     if (t.dataset.view === state.view) t.setAttribute('aria-current', 'page'); else t.removeAttribute('aria-current');
   });
   const main = $('#main');
   if (!state.loaded) { main.innerHTML = '<p class="loading">Chargement du calendrier…</p>'; return; }
+  marquerEntree(main);
   if (state.view === 'reglages') { afficherReglages(main); return; }
   main.innerHTML = state.view === 'calendrier' ? calendarView() : state.view === 'valider' ? validateView() : eventsView();
   hydratePhotos(main);
@@ -2094,6 +2187,12 @@ function dessinerChat() {
   if (chat.encours) html += `<div class="ia-ligne">${MASCOTTE}<div class="ia-attente">L’agent réfléchit…</div></div>`;
   log.innerHTML = html;
   log.scrollTop = log.scrollHeight;
+  // La liste est reconstruite à chaque fois : seuls les nouveaux éléments s'animent.
+  if (chat.messages.length !== chat.affiches || chat.encours) {
+    log.lastElementChild.classList.add('ia-entree');
+    if (chat.encours && log.lastElementChild.previousElementSibling) log.lastElementChild.previousElementSibling.classList.add('ia-entree');
+  }
+  chat.affiches = chat.messages.length;
 }
 
 function contexteAgent() {
