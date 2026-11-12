@@ -585,16 +585,19 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
    */
   async function ecrireCode({ systeme, messages }) {
     const cfg = configuration();
+    // Une partie peut être { type: 'image', mime, data } (base64) : la capture d'un visuel à vérifier.
+    const pourAnthropic = (c) => (typeof c === 'string' ? c : c.map((b) => (b.type === 'image' ? { type: 'image', source: { type: 'base64', media_type: b.mime, data: b.data } } : b)));
+    const pourOpenRouter = (c) => (typeof c === 'string' ? c : c.map((b) => (b.type === 'image' ? { type: 'image_url', image_url: { url: `data:${b.mime};base64,${b.data}` } } : b)));
     try {
       if (cfg.fournisseur === 'anthropic') {
         const Anthropic = sdkAnthropic();
         const client = new Anthropic({ apiKey: cfg.cle, baseURL: process.env.CALENDY_ANTHROPIC_URL || undefined });
-        const rep = await client.messages.create({ model: cfg.modele, max_tokens: 16000, system: systeme, messages, output_config: { effort: cfg.effort } });
+        const rep = await client.messages.create({ model: cfg.modele, max_tokens: 16000, system: systeme, messages: messages.map((m) => ({ role: m.role, content: pourAnthropic(m.content) })), output_config: { effort: cfg.effort } });
         if (rep.stop_reason === 'refusal') throw new HttpError(ERREUR_SERVICE, 'Le modèle de l’agent a refusé d’écrire ce visuel.');
         if (rep.stop_reason === 'max_tokens') throw new HttpError(ERREUR_SERVICE, 'Le code du visuel était trop long pour le modèle de l’agent.');
         return rep.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
       }
-      const data = await requeteOpenRouter('/chat/completions', cfg.cle, { model: cfg.modele, max_tokens: 16000, messages: [{ role: 'system', content: systeme }, ...messages] });
+      const data = await requeteOpenRouter('/chat/completions', cfg.cle, { model: cfg.modele, max_tokens: 16000, messages: [{ role: 'system', content: systeme }, ...messages.map((m) => ({ role: m.role, content: pourOpenRouter(m.content) }))] });
       const choix = data.choices && data.choices[0];
       if (!choix || !choix.message) throw new HttpError(ERREUR_SERVICE, 'Réponse vide d’OpenRouter.');
       if (choix.finish_reason === 'length') throw new HttpError(ERREUR_SERVICE, 'Le code du visuel était trop long pour le modèle de l’agent.');

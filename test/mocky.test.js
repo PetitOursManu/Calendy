@@ -65,7 +65,17 @@ function fauxMocky() {
     if (appels.filter((a) => a.name === 'submit_screen').length === 1) {
       return { content: [{ type: 'text', text: 'Le code soumis ne s’affiche pas.' }], structuredContent: { status: 'awaiting_code', jobId: args.job_id, round: 1, renderError: 'ReferenceError: Foo is not defined' } };
     }
-    return ok({ status: 'done', projectId: 'p-client', screenId: 's-client', link: 'http://mocky.test/p/p-client?screen=s-client' });
+    // Comme Mocky : la capture du visuel accompagne la réponse.
+    return { content: [{ type: 'image', data: Buffer.from('capture-visuel').toString('base64'), mimeType: 'image/jpeg' }, { type: 'text', text: 'ok' }], structuredContent: { status: 'done', projectId: 'p-client', screenId: 's-client', link: 'http://mocky.test/p/p-client?screen=s-client' } };
+  });
+  server.registerTool('get_project', { inputSchema: { project_id: z.string() } }, async (args) => {
+    garder('get_project')(args);
+    // Le projet d'un post fait depuis un modèle : l'écran du modèle (plus ancien, même format) et le nouveau visuel.
+    return ok({ screens: [{ id: 'modele-paysage', width: 1200, height: 628, createdAt: '2030-01-01T00:00:00Z' }, { id: 'modele-carre', width: 1080, height: 1080, createdAt: '2030-01-02T00:00:00Z' }, { id: 's-client', width: 1080, height: 1080, createdAt: '2030-02-01T00:00:00Z' }] });
+  });
+  server.registerTool('get_screenshot', { inputSchema: { project_id: z.string(), screen_id: z.string() } }, async (args) => {
+    garder('get_screenshot')(args);
+    return { content: [{ type: 'image', data: Buffer.from(`capture-${args.screen_id}`).toString('base64'), mimeType: 'image/jpeg' }, { type: 'text', text: 'ok' }], structuredContent: { projectId: args.project_id, screenId: args.screen_id } };
   });
   server.registerTool('get_design', { inputSchema: { job_id: z.string() } }, async (args) => {
     garder('get_design')(args);
@@ -73,7 +83,7 @@ function fauxMocky() {
   });
   server.registerTool('edit_design', { inputSchema: { project_id: z.string(), screen_id: z.string(), instruction: z.string() } }, async (args) => {
     garder('edit_design')(args);
-    return ok({ status: 'done', projectId: args.project_id, screenId: args.screen_id, link: 'http://mocky.test/edit' });
+    return { content: [{ type: 'image', data: Buffer.from('capture-corrigee').toString('base64'), mimeType: 'image/jpeg' }, { type: 'text', text: 'ok' }], structuredContent: { status: 'done', projectId: args.project_id, screenId: args.screen_id, link: 'http://mocky.test/edit' } };
   });
   server.registerTool('export_screen', { inputSchema: { project_id: z.string(), screen_id: z.string(), format: z.string() } }, async (args) => {
     garder('export_screen')(args);
@@ -94,7 +104,11 @@ before(async () => {
       for await (const c of req) morceauxIa.push(c);
       const corps = JSON.parse(Buffer.concat(morceauxIa).toString('utf8'));
       requetesIa.push(corps);
-      const code = requetesIa.length === 1 ? 'export default function App(){ return <Doc>PREMIER</Doc> }' : 'export default function App(){ return <Doc>CORRIGE</Doc> }';
+      const verifications = requetesIa.filter((x) => /VÉRIFICATION VISUELLE/.test(x.system));
+      const ecritures = requetesIa.filter((x) => !/VÉRIFICATION VISUELLE/.test(x.system));
+      const code = /VÉRIFICATION VISUELLE/.test(corps.system)
+        ? verifications.length === 1 ? '- Mets les trois pastilles à la même largeur, texte sur une ligne.' : 'OK'
+        : ecritures.length === 1 ? 'export default function App(){ return <Doc>PREMIER</Doc> }' : 'export default function App(){ return <Doc>CORRIGE</Doc> }';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ id: 'm', type: 'message', role: 'assistant', model: 'x', stop_reason: 'end_turn', content: [{ type: 'text', text: code }], usage: { input_tokens: 1, output_tokens: 1 } }));
     }
@@ -300,11 +314,12 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
   assert.equal(creation.style, 'Fond blanc lumineux, une seule photo.');
 
   // Le modèle de l'agent a reçu les règles de Mocky (avec le code du modèle), les consignes et la consigne de copie.
-  const [premier, second] = requetesIa;
+  const [premier, second] = requetesIa.filter((x) => !/VÉRIFICATION VISUELLE/.test(x.system));
   assert.match(premier.system, /REGLES-DE-MOCKY/);
   assert.match(premier.system, /LAYOUT MODEL — code du modèle/);
   assert.match(premier.system, /Fond blanc lumineux/);
   assert.match(premier.system, /PARS DE CE CODE/);
+  assert.match(premier.system, /tient sur UNE ligne/);
   assert.deepEqual(premier.messages, [{ role: 'user', content: 'DEMANDE-DU-POST' }]);
   // L'erreur de rendu revient avec le code précédent : corriger CETTE erreur seulement.
   assert.equal(second.messages.length, 3);
@@ -312,6 +327,17 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
 
   const envois = appels.filter((a) => a.name === 'submit_screen').map((a) => a.args.code);
   assert.deepEqual(envois, ['export default function App(){ return <Doc>PREMIER</Doc> }', 'export default function App(){ return <Doc>CORRIGE</Doc> }']);
+  // Puis il compare la capture du visuel à celle du modèle de MÊME format, et fait corriger ce qu'il voit.
+  const verifications = requetesIa.filter((x) => /VÉRIFICATION VISUELLE/.test(x.system));
+  assert.equal(verifications.length, 2, 'une vérification, une correction, une vérification qui dit OK');
+  const images = verifications[0].messages[0].content.filter((b) => b.type === 'image').map((b) => Buffer.from(b.source.data, 'base64').toString());
+  assert.deepEqual(images, ['capture-modele-carre', 'capture-visuel']);
+  assert.match(verifications[0].system, /Fond blanc lumineux/);
+  assert.deepEqual(verifications[1].messages[0].content.filter((b) => b.type === 'image').map((b) => Buffer.from(b.source.data, 'base64').toString()), ['capture-modele-carre', 'capture-corrigee']);
+  const corrections = appels.filter((a) => a.name === 'edit_design');
+  assert.equal(corrections.length, 1);
+  assert.match(corrections[0].args.instruction, /sans changer les textes/);
+  assert.match(corrections[0].args.instruction, /même largeur/);
   const post = (await api('GET', `/api/posts/${p.id}`)).json;
   assert.equal(post.mocky.projet, 'p-client');
   assert.equal(post.photos.meta.length, 1);
