@@ -322,7 +322,7 @@ test('agent : les outils Mocky n’existent qu’une fois Mocky configuré, et l
 test('agent : une clé refusée donne un message clair, pas un 401 qui redemanderait le jeton', async () => {
   reponses = [{ __statut: 401, type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }];
   const r = await api('POST', '/api/agent/tester', {});
-  assert.equal(r.status, 502);
+  assert.equal(r.status, 424, 'jamais 502 : un proxy le remplacerait par sa page HTML');
   assert.match(r.json.error, /Clé API refusée/);
 });
 
