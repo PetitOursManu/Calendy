@@ -55,6 +55,7 @@ const FORMATS = {
 };
 const REDACTEURS = ['mocky', 'calendy'];
 const CONSIGNES_MAX = 3000;
+const EXEMPLES_MAX = 4;
 
 /**
  * Quand Calendy écrit lui-même le code (réglage « L'agent IA de Calendy ») : la consigne qui fait de lui un copiste
@@ -69,6 +70,7 @@ Le nouveau texte doit tenir dans la place de l'ancien :
 - les éléments décoratifs liés à un texte (soulignement, filet, surlignage, trait sous un titre) restent à la même place par rapport à ce texte : s'ils ont une position fixe calée sur l'ancien texte, recale-les sur le nouveau ;
 - les icônes restent du même jeu et du même style que celles du modèle ; une icône qui change de sens prend une icône de ce même jeu ;
 - la photo : si les règles donnent l'adresse d'une photo pour ce post, elle REMPLACE celle du modèle, au même endroit et dans la même forme (arche, cadre…). Ne dessine pas d'illustration à la place d'une photo.
+Si ces règles contiennent des STYLE EXAMPLES (plusieurs posts donnés en exemple) au lieu d'un LAYOUT MODEL, ne recopie aucun d'eux : compose un visuel de la même famille (identité, couleurs, polices, types de blocs, traitement de la photo), avec une mise en page adaptée à ce post, et garde tels quels les éléments que tous les exemples partagent (coordonnées, emplacement du logo).
 Réponds uniquement par le composant complet, sans explication.`;
 
 /** Les deux parties de ce que Mocky donne à écrire (submit_screen) : ses règles et la demande. */
@@ -89,7 +91,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
 
   /* ------------------------------ réglages ------------------------------ */
 
-  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', themes: [], evenements: {}, formats: { meta: '', linkedin: '' }, redacteur: 'mocky', consignes: '', consignesModeles: {} });
+  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', defautMode: 'exact', defautExemples: [], themes: [], evenements: {}, formats: { meta: '', linkedin: '' }, redacteur: 'mocky', consignes: '', consignesModeles: {} });
 
   function lire() {
     try {
@@ -149,7 +151,16 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       if (cle && !cle.startsWith('mocky_ak_')) throw new HttpError(400, 'Une clé d’assistant Mocky commence par « mocky_ak_ ».');
       r.cle = cle;
     }
-    if ('modeleDefaut' in body) r.modeleDefaut = modeleOuVide(body.modeleDefaut);
+    if ('modeleDefaut' in body) {
+      r.modeleDefaut = modeleOuVide(body.modeleDefaut);
+      r.defautMode = 'exact';
+    }
+    if ('defaut' in body) {
+      const c = choixDe(body.defaut);
+      r.defautMode = c.mode;
+      r.modeleDefaut = c.modele;
+      r.defautExemples = c.exemples;
+    }
     if ('formats' in body) {
       if (!body.formats || typeof body.formats !== 'object') throw new HttpError(400, 'Champ « formats » : { meta, linkedin }.');
       for (const v of Object.keys(VISUELS)) {
@@ -183,18 +194,19 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       r.themes = [];
       for (const t of body.themes) {
         const theme = String((t && t.theme) || '').trim().slice(0, 200);
-        const modele = modeleOuVide(t && t.modele);
-        if (!theme || !modele || vus.has(cleTheme(theme))) continue;
+        const c = choixDe(t);
+        if (!theme || !choixRempli(c) || vus.has(cleTheme(theme))) continue;
         vus.add(cleTheme(theme));
-        r.themes.push({ theme, modele });
+        r.themes.push(c.mode === 'inspiration' ? { theme, mode: 'inspiration', exemples: c.exemples } : { theme, modele: c.modele });
       }
     }
     if ('evenements' in body) {
       if (!body.evenements || typeof body.evenements !== 'object' || Array.isArray(body.evenements)) throw new HttpError(400, 'Champ « evenements » : un objet { identifiant: modèle }.');
       r.evenements = {};
-      for (const [id, m] of Object.entries(body.evenements).slice(0, 500)) {
-        const modele = modeleOuVide(m);
-        if (/^[\w-]{1,64}$/.test(id) && modele) r.evenements[id] = modele;
+      for (const [id, v] of Object.entries(body.evenements).slice(0, 500)) {
+        const c = choixDe(v);
+        // Un modèle exact reste rangé comme avant (son identifiant seul) ; des exemples, comme un objet.
+        if (/^[\w-]{1,64}$/.test(id) && choixRempli(c)) r.evenements[id] = c.mode === 'inspiration' ? { mode: 'inspiration', exemples: c.exemples } : c.modele;
       }
     }
     ecrire(r);
@@ -208,14 +220,35 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     return m;
   }
 
-  /** Le modèle d'un post : celui de son événement, sinon celui de son thème, sinon le modèle par défaut. */
+  /**
+   * Une façon d'utiliser les modèles : « exact » (UN modèle, recopié fidèlement) ou « inspiration » (jusqu'à quatre
+   * modèles donnés comme exemples d'une série : même famille, mise en page libre). Une chaîne seule est un modèle
+   * exact, ce qu'étaient toutes les règles avant les exemples.
+   */
+  function choixDe(v) {
+    if (typeof v === 'string' || v === null || v === undefined) return { mode: 'exact', modele: modeleOuVide(v), exemples: [] };
+    if (typeof v !== 'object' || Array.isArray(v)) throw new HttpError(400, 'Choix de modèle invalide.');
+    if (v.mode === 'inspiration') {
+      if (!Array.isArray(v.exemples)) throw new HttpError(400, 'Champ « exemples » : une liste de modèles.');
+      const exemples = [...new Set(v.exemples.map(modeleOuVide).filter(Boolean))];
+      if (exemples.length > EXEMPLES_MAX) throw new HttpError(400, `${EXEMPLES_MAX} exemples au plus.`);
+      return { mode: 'inspiration', modele: '', exemples };
+    }
+    if (v.mode !== undefined && v.mode !== 'exact') throw new HttpError(400, 'Mode inconnu : exact ou inspiration.');
+    return { mode: 'exact', modele: modeleOuVide(v.modele), exemples: [] };
+  }
+  const choixRempli = (c) => (c.mode === 'inspiration' ? c.exemples.length > 0 : Boolean(c.modele));
+
+  /** Le choix d'un post : celui de son événement, sinon celui de son thème, sinon celui par défaut. */
   function modelePour(post, r = lire()) {
-    if (post.eventId && r.evenements[post.eventId]) return { modele: r.evenements[post.eventId], raison: 'evenement' };
+    const avec = (c, raison) => ({ ...choixDe(c), raison });
+    if (post.eventId && r.evenements[post.eventId]) return avec(r.evenements[post.eventId], 'evenement');
     const theme = cleTheme(post.atelier);
     const regle = theme && r.themes.find((t) => cleTheme(t.theme) === theme);
-    if (regle) return { modele: regle.modele, raison: 'theme' };
-    if (r.modeleDefaut) return { modele: r.modeleDefaut, raison: 'defaut' };
-    return { modele: '', raison: 'aucun' };
+    if (regle) return avec(regle.mode === 'inspiration' ? regle : regle.modele, 'theme');
+    const defaut = r.defautMode === 'inspiration' ? { mode: 'inspiration', exemples: r.defautExemples || [] } : r.modeleDefaut;
+    if (choixRempli(choixDe(defaut))) return avec(defaut, 'defaut');
+    return { mode: 'exact', modele: '', exemples: [], raison: 'aucun' };
   }
 
   /* ------------------------------ client MCP ------------------------------ */
@@ -377,9 +410,13 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
    * Les consignes d'un visuel : celles du modèle utilisé d'abord (un modèle carré Instagram et un modèle LinkedIn
    * n'ont pas les mêmes règles), puis les consignes générales, valables pour tous.
    */
-  function consignesPour(modele, r = lire()) {
-    const propres = modele && r.consignesModeles[modele];
-    return [propres ? `Pour ce modèle :\n${propres}` : '', r.consignes ? (propres ? `Pour tous les visuels :\n${r.consignes}` : r.consignes) : ''].filter(Boolean).join('\n\n');
+  function consignesPour(choix, r = lire()) {
+    const c = typeof choix === 'string' || !choix ? { mode: 'exact', modele: choix || '', exemples: [] } : choix;
+    // Des exemples : les consignes de chacun, toutes données (elles décrivent la même série).
+    const ids = c.mode === 'inspiration' ? c.exemples : [c.modele];
+    const propres = ids.map((id) => id && r.consignesModeles[id]).filter(Boolean);
+    const titre = c.mode === 'inspiration' ? 'Pour ces exemples' : 'Pour ce modèle';
+    return [propres.length ? `${titre} :\n${propres.join('\n')}` : '', r.consignes ? (propres.length ? `Pour tous les visuels :\n${r.consignes}` : r.consignes) : ''].filter(Boolean).join('\n\n');
   }
 
   function ecrivain(r0, modele) {
@@ -476,6 +513,12 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
     }
   }
 
+  const CONSIGNE_VERIFICATION_SEULE = `VÉRIFICATION VISUELLE. Tu vérifies la capture d'un visuel de réseau social (image VISUEL).
+Relève UNIQUEMENT ses défauts de mise en forme : texte qui déborde, se coupe ou passe à la ligne au mauvais endroit ; blocs, pastilles ou cadres de largeurs ou d'alignements incohérents ; texte mal aligné dans sa pastille ; soulignement, filet ou décor décalé par rapport à son texte ; icônes de styles ou de tailles différents ; contraste illisible ; consigne de l'utilisateur non respectée.
+Ne commente ni le contenu ni la photo.
+Si rien n'est à corriger, réponds exactement : OK
+Sinon, réponds par une consigne de modification pour un designer, courte et précise, en liste, qui dit quoi changer et où. Pas d'autre texte.`;
+
   async function verifier(m, fini, tache, modeleId) {
     if (!ecrireCode) return null;
     let lien = null;
@@ -495,11 +538,16 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
       } catch {
         return lien; // une vérification impossible ne doit pas coûter le visuel
       }
-      if (!capture || !modele) return lien;
+      const seul = modeleId && modeleId.mode === 'inspiration';
+      if (!capture || (!modele && !seul)) return lien;
       const consignes = consignesPour(modeleId);
+      // Des exemples : pas de modèle à comparer, le visuel est vérifié seul (débordements, alignements, consignes).
+      const images = modele && !seul
+        ? [{ type: 'text', text: 'MODÈLE :' }, { type: 'image', ...modele }, { type: 'text', text: 'VISUEL :' }, { type: 'image', ...capture }]
+        : [{ type: 'text', text: 'VISUEL :' }, { type: 'image', ...capture }];
       const avis = await ecrireCode({
-        systeme: [CONSIGNE_VERIFICATION, consignes ? `Consignes visuelles de l'utilisateur :\n${consignes}` : ''].filter(Boolean).join('\n\n'),
-        messages: [{ role: 'user', content: [{ type: 'text', text: 'MODÈLE :' }, { type: 'image', ...modele }, { type: 'text', text: 'VISUEL :' }, { type: 'image', ...capture }, { type: 'text', text: 'Ce visuel a-t-il des défauts de mise en forme à corriger ?' }] }],
+        systeme: [seul ? CONSIGNE_VERIFICATION_SEULE : CONSIGNE_VERIFICATION, consignes ? `Consignes visuelles de l'utilisateur :\n${consignes}` : ''].filter(Boolean).join('\n\n'),
+        messages: [{ role: 'user', content: [...images, { type: 'text', text: 'Ce visuel a-t-il des défauts de mise en forme à corriger ?' }] }],
       }).catch(() => 'OK');
       if (/^\s*OK\b/i.test(avis) || !avis.trim()) return lien;
       tache.etape = `Correction de la mise en forme (${tour + 1}/${CORRECTIONS_MAX})`;
@@ -562,10 +610,11 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
       let screenId;
       let lien;
       let modele = (post.mocky && post.mocky.modele) || '';
+      let choix = { mode: (post.mocky && post.mocky.mode) || 'exact', modele, exemples: (post.mocky && post.mocky.exemples) || [] };
       if (action === 'creer') {
-        // Refaire un visuel dans le projet du post : le modèle reste celui du projet, même si les règles ont changé depuis.
-        const choix = demande.modele !== undefined ? { modele: demande.modele } : post.mocky && post.mocky.projet ? { modele: post.mocky.modele || '' } : modelePour(post);
-        modele = choix.modele;
+        // Refaire un visuel dans le projet du post : le choix reste celui du projet, même si les règles ont changé depuis.
+        choix = demande.choix || (post.mocky && post.mocky.projet ? choix : modelePour(post));
+        modele = choix.mode === 'exact' ? choix.modele : '';
         const reglages = lire();
         const commun = {
           brief: briefDe(post, visuel),
@@ -576,11 +625,11 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
           // « client » : Mocky prépare tout et c'est l'agent de Calendy qui écrit le code (voir ecrivain).
           engine: reglages.redacteur === 'calendy' ? 'client' : 'mocky',
           ...(reglages.formats[visuel] ? { page_format: reglages.formats[visuel] } : {}),
-          ...(consignesPour(modele, reglages) ? { style: consignesPour(modele, reglages).slice(0, 300) } : {}),
+          ...(consignesPour(choix, reglages) ? { style: consignesPour(choix, reglages).slice(0, 300) } : {}),
           ...(post.imageIdee ? { picture_subject: post.imageIdee.slice(0, 300) } : {}),
         };
         if (reglages.redacteur === 'calendy') {
-          const { photo, sujet, note } = await choisirPhoto(m, post, visuel, modele, tache, reglages);
+          const { photo, sujet, note } = await choisirPhoto(m, post, visuel, choix, tache, reglages);
           if (photo) commun.images = [photo];
           else if (sujet) commun.picture_subject = sujet; // en anglais : Mocky cherche ou génère mieux
           if (note) tache.remarques.push(note);
@@ -592,7 +641,11 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
           tache.etape = 'Ajout de l’écran au projet du post';
           try {
             // follow_layout : même composition que le visuel déjà fait dans ce projet (ou que le modèle).
-            r = await m.outil('add_screen', { ...commun, project_id: projet, follow_layout: true });
+            r = await m.outil('add_screen', {
+              ...commun,
+              project_id: projet,
+              ...(choix.mode === 'inspiration' ? { follow_layout: false, inspiration_ids: choix.exemples } : { follow_layout: true }),
+            });
           } catch (err) {
             if (!/projet|project/i.test(err.message)) throw err;
             r = null; // le projet a été supprimé dans Mocky : on en recrée un
@@ -600,15 +653,16 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
         }
         if (!r) {
           tache.etape = modele ? 'Nouveau projet à partir du modèle' : 'Nouveau projet';
-          r = await m.outil('create_design', { ...commun, project_name: `${post.datePublication} · ${post.titre}`.slice(0, 120), ...(modele ? { template_id: modele } : {}) });
+          const exemples = choix.mode === 'inspiration' ? choix.exemples : [];
+          r = await m.outil('create_design', { ...commun, project_name: `${post.datePublication} · ${post.titre}`.slice(0, 120), ...(modele ? { template_id: modele } : {}), ...(exemples.length ? { inspiration_ids: exemples } : {}) });
         }
-        const fini = await attendre(m, r, tache, modele);
+        const fini = await attendre(m, r, tache, choix);
         // Ce que Mocky signale (pas de photo trouvée, texte coupé…) : montré à la fin de la tâche.
         for (const n of Array.isArray(fini.notes) ? fini.notes : []) if (n && !tache.remarques.includes(n)) tache.remarques.push(String(n).slice(0, 300));
         ({ projectId, screenId } = { projectId: fini.projectId, screenId: fini.screenId });
         lien = fini.link;
         // Comme Claude Desktop qui « contrôle la capture » : l'agent compare le visuel au modèle et fait corriger.
-        if (reglages.redacteur === 'calendy') lien = (await verifier(m, fini, tache, modele)) || lien;
+        if (reglages.redacteur === 'calendy') lien = (await verifier(m, fini, tache, choix)) || lien;
       } else {
         if (!existant || !post.mocky.projet) throw new HttpError(409, 'Ce visuel n’a pas encore été créé avec Mocky.');
         projectId = post.mocky.projet;
@@ -625,7 +679,7 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
       tache.etape = 'Enregistrement dans Calendy';
       // Les liens montrés à l'utilisateur sont ceux de Mocky (son adresse publique), jamais l'adresse interne des réglages.
       const lienProjet = (lien && lien.replace(/\?.*$/, '')) || (post.mocky && post.mocky.lien) || `${m.base}/p/${encodeURIComponent(projectId)}`;
-      appliquer(postId, visuel, { ...fichiers, projet: projectId, ecran: screenId, lien, lienProjet, modele, action });
+      appliquer(postId, visuel, { ...fichiers, projet: projectId, ecran: screenId, lien, lienProjet, modele, mode: choix.mode, exemples: choix.mode === 'inspiration' ? choix.exemples : [], action });
     });
   }
 
@@ -642,7 +696,8 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
       if (!demande.instruction) throw new HttpError(400, 'Dis ce qu’il faut changer dans le visuel.');
       if (demande.instruction.length > 4000) throw new HttpError(400, 'La demande de modification est limitée à 4 000 caractères.');
     }
-    if (action === 'creer' && 'modele' in b) demande.modele = modeleOuVide(b.modele);
+    if (action === 'creer' && 'modele' in b) demande.choix = choixDe(b.modele);
+    if (action === 'creer' && b.choix) demande.choix = choixDe(b.choix);
     if (!connexion()) throw new HttpError(400, 'Mocky n’est pas configuré : renseigne son adresse et une clé d’assistant dans Réglages, onglet Mocky.');
     const post = lirePost(postId);
     const reseaux = visuel === 'meta' ? ['Instagram', 'Facebook'] : ['LinkedIn'];

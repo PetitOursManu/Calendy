@@ -105,6 +105,10 @@ Calendy peut demander à **Mocky** le visuel d'un post. Il récupère ensuite de
 
 **Formats et consignes**, au même endroit : le format de chaque visuel (Instagram + Facebook, LinkedIn : carré 1:1, portrait 4:5, story 9:16 ou paysage 1,91:1 ; par défaut, celui de Mocky), à choisir comme tes modèles ; des **consignes pour tous les visuels** (fond, photo, couleurs, mentions obligatoires…) et des **consignes par modèle** (les règles propres à un modèle : largeur des pastilles, place du logo…), toutes vides par défaut. Les consignes du modèle utilisé passent avant les consignes générales. L'agent IA les lit en entier ; Mocky en reçoit les 300 premiers caractères.
 
+**Modèle exact ou inspiration.** Chaque règle (et le choix fait dans la fiche du post) a un bouton **Modèle exact / Inspiration** :
+- **Modèle exact** : un seul modèle, recopié fidèlement ; seul le contenu change.
+- **Inspiration** : jusqu'à 4 **exemples de posts** (modèles de projet Mocky), cochés dans un menu déroulant. Le visuel est de la même famille (identité, couleurs, polices, types de blocs, traitement de la photo) avec une mise en page propre au post, sans copier l'un d'eux. Les consignes de chaque exemple sont données ; la vérification visuelle contrôle le visuel seul (il n'y a pas un modèle à comparer). Demande une version de Mocky qui gère `inspiration_ids`.
+
 **Le choix du modèle**, dans **Réglages → Mocky** :
 1. le modèle de l'**événement** du post, s'il en a un ;
 2. sinon celui de son **thème** (le champ « Atelier ou thème », sans tenir compte des majuscules ni des accents) ;

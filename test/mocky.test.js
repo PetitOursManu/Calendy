@@ -45,8 +45,8 @@ function fauxMocky() {
   const ok = (structured) => ({ content: [{ type: 'text', text: 'ok' }], structuredContent: structured });
   const garder = (name) => (args) => { appels.push({ name, args }); return null; };
   server.registerTool('list_templates', { inputSchema: {} }, async () => { garder('list_templates')({}); return ok({ templates: [{ id: 'tcuisine', name: 'Cuisine', screens: 2 }, { id: 'trose', name: 'Octobre Rose', screens: 1 }] }); });
-  const design = { brief: z.string(), images: z.array(z.object({ image_id: z.string(), use: z.string() })).optional(), follow_layout: z.boolean().optional(), page_format: z.string().optional(), style: z.string().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
-  server.registerTool('create_design', { inputSchema: { ...design, project_name: z.string().optional(), template_id: z.string().optional() } }, async (args) => {
+  const design = { brief: z.string(), inspiration_ids: z.array(z.string()).optional(), images: z.array(z.object({ image_id: z.string(), use: z.string() })).optional(), follow_layout: z.boolean().optional(), page_format: z.string().optional(), style: z.string().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
+  server.registerTool('create_design', { inputSchema: { ...design, project_name: z.string().optional(), template_id: z.string().optional(), inspiration_ids: z.array(z.string()).optional() } }, async (args) => {
     garder('create_design')(args);
     if (args.engine === 'client') {
       // Comme Mocky (contractResult) : ses règles, puis la demande, et un travail qui attend le code.
@@ -185,9 +185,19 @@ test('le modèle se choisit par événement, puis par thème, puis par défaut',
   await api('PUT', '/api/mocky/reglages', { modeleDefaut: 'tdefaut', themes: [{ theme: 'Cuisine', modele: 'tcuisine' }], evenements: { [ev.id]: 'trose' } });
   const creer = async (extra) => (await api('POST', '/api/posts', { titre: 'P', datePublication: '2030-10-10', plateformes: ['Instagram'], ...extra })).json;
   const modele = async (p) => (await api('GET', `/api/posts/${p.id}/mocky/modele`)).json;
-  assert.deepEqual(await modele(await creer({ eventId: ev.id, atelier: 'Cuisine' })), { modele: 'trose', raison: 'evenement' });
-  assert.deepEqual(await modele(await creer({ atelier: 'cuisine ' })), { modele: 'tcuisine', raison: 'theme' });
-  assert.deepEqual(await modele(await creer({ atelier: 'Autre' })), { modele: 'tdefaut', raison: 'defaut' });
+  const exact = (m, raison) => ({ mode: 'exact', modele: m, exemples: [], raison });
+  assert.deepEqual(await modele(await creer({ eventId: ev.id, atelier: 'Cuisine' })), exact('trose', 'evenement'));
+  assert.deepEqual(await modele(await creer({ atelier: 'cuisine ' })), exact('tcuisine', 'theme'));
+  assert.deepEqual(await modele(await creer({ atelier: 'Autre' })), exact('tdefaut', 'defaut'));
+  // Des exemples au lieu d'un modèle exact, pour un thème : la règle le dit, et un réglage ancien reste compris.
+  await api('PUT', '/api/mocky/reglages', { themes: [{ theme: 'Cuisine', modele: 'tcuisine' }, { theme: 'Portraits', mode: 'inspiration', exemples: ['tportrait1', 'tportrait2', 'tportrait1'] }] });
+  assert.deepEqual(await modele(await creer({ atelier: 'Portraits' })), { mode: 'inspiration', modele: '', exemples: ['tportrait1', 'tportrait2'], raison: 'theme' });
+  assert.equal((await api('PUT', '/api/mocky/reglages', { themes: [{ theme: 'X', mode: 'inspiration', exemples: ['a1', 'a2', 'a3', 'a4', 'a5'] }] })).status, 400);
+  assert.equal((await api('PUT', '/api/mocky/reglages', { defaut: { mode: 'autre' } })).status, 400);
+  const d = (await api('PUT', '/api/mocky/reglages', { defaut: { mode: 'inspiration', exemples: ['tdefaut', 'trose'] } })).json;
+  assert.equal(d.defautMode, 'inspiration');
+  assert.deepEqual(await modele(await creer({ atelier: 'Autre' })), { mode: 'inspiration', modele: '', exemples: ['tdefaut', 'trose'], raison: 'defaut' });
+  await api('PUT', '/api/mocky/reglages', { defaut: 'tdefaut', themes: [{ theme: 'Cuisine', modele: 'tcuisine' }] });
 });
 
 test('créer un visuel : un projet par post depuis le modèle, PNG dans les images, fichier Canva à télécharger', async () => {
@@ -368,6 +378,25 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
   assert.equal(post.mocky.projet, 'p-client');
   assert.equal(post.photos.meta.length, 1);
   await api('PUT', '/api/mocky/reglages', { redacteur: 'mocky', formats: { meta: '' }, consignes: '', consignesModeles: {} });
+});
+
+test('inspiration : les exemples partent à Mocky (pas de modèle à recopier), et Refaire le visuel les reprend', async () => {
+  const p = (await api('POST', '/api/posts', { titre: 'Portrait', datePublication: '2030-12-03', plateformes: ['Instagram', 'LinkedIn'] })).json;
+  appels.length = 0;
+  const fin = await finDeTache((await api('POST', `/api/posts/${p.id}/mocky`, { visuel: 'meta', choix: { mode: 'inspiration', exemples: ['tportrait1', 'tportrait2'] } })).json.id);
+  assert.equal(fin.etat, 'fini', fin.message);
+  const creation = appels.find((a) => a.name === 'create_design').args;
+  assert.deepEqual(creation.inspiration_ids, ['tportrait1', 'tportrait2']);
+  assert.equal(creation.template_id, undefined);
+  const post = (await api('GET', `/api/posts/${p.id}`)).json;
+  assert.equal(post.mocky.mode, 'inspiration');
+  assert.deepEqual(post.mocky.exemples, ['tportrait1', 'tportrait2']);
+  // Le second réseau, puis « Refaire » : mêmes exemples, sans recopier le premier visuel.
+  appels.length = 0;
+  await finDeTache((await api('POST', `/api/posts/${p.id}/mocky`, { visuel: 'linkedin' })).json.id);
+  const ajout = appels.find((a) => a.name === 'add_screen').args;
+  assert.deepEqual(ajout.inspiration_ids, ['tportrait1', 'tportrait2']);
+  assert.equal(ajout.follow_layout, false);
 });
 
 test('un refus de Mocky est rapporté dans la tâche', async () => {

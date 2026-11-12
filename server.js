@@ -1080,6 +1080,8 @@ function appliquerVisuelMocky(postId, visuel, r) {
         projet: r.projet,
         lien: r.lienProjet,
         modele: r.modele || '',
+        // « inspiration » : le visuel a été fait d'après ces exemples ; Refaire le visuel les reprend.
+        ...(r.mode === 'inspiration' ? { mode: 'inspiration', exemples: r.exemples || [] } : {}),
         visuels: { ...precedents, [visuel]: { ecran: r.ecran, lien: r.lien || r.lienProjet, fichier, canva, nomCanva: r.nomCanva, date: new Date().toISOString() } },
       };
       saveDb();
