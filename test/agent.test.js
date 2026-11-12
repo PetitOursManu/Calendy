@@ -273,6 +273,35 @@ test('agent : les fiches ouvertes sont transmises dans le contexte', async () =>
   assert.match(JSON.stringify(requetes[0].body.system), /Un text avec une fote/);
 });
 
+test('agent : consignes pour adapter un post à Instagram/Facebook ou à LinkedIn', async () => {
+  const p = await creerPost('À adapter', { plateformes: ['Instagram', 'LinkedIn'] });
+  reponses = [claude(appel('modifier_post', { id: p.id, description: 'Version LinkedIn' })), claude(texte('Adapté.'))];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Adapte la légende de ce post pour LinkedIn.' }], contexte: { ouvert: { type: 'post', id: p.id, valeurs: { description: 'Version Insta ✨' } } } });
+  const systeme = JSON.stringify(requetes[0].body.system);
+  assert.match(systeme, /Instagram et Facebook : accroche/);
+  assert.match(systeme, /LinkedIn : ton professionnel/);
+  assert.equal(r.json.surlignage, null);
+  assert.equal((await api('GET', `/api/posts/${p.id}`)).json.description, 'Version LinkedIn');
+  // L'outil de surlignage n'existe qu'avec une comparaison ouverte.
+  assert.ok(!requetes[0].body.tools.some((t) => t.name === 'surligner_differences'));
+});
+
+test('agent : comparaison ouverte, les posts sont lus sur le serveur et le surlignage revient à l’écran', async () => {
+  const a = await creerPost('Version A', { description: 'Bonjour à tous' });
+  const b = await creerPost('Version B', { description: 'Bonjour à toutes' });
+  reponses = [claude(appel('surligner_differences', { actif: true })), claude(texte('C’est surligné.'))];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Surligne les différences' }], contexte: { comparaison: { ids: [a.id, b.id, 'inconnu'], surlignage: false } } });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.surlignage, true);
+  const systeme = JSON.stringify(requetes[0].body.system);
+  assert.match(systeme, /Bonjour à toutes/);
+  assert.ok(requetes[0].body.tools.some((t) => t.name === 'surligner_differences'));
+  // Un seul post encore existant : plus de comparaison, plus d'outil.
+  reponses = [claude(texte('Rien.'))];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Surligne' }], contexte: { comparaison: { ids: [a.id, 'inconnu'] } } });
+  assert.ok(!requetes.at(-1).body.tools.some((t) => t.name === 'surligner_differences'));
+});
+
 test('agent : une clé refusée donne un message clair, pas un 401 qui redemanderait le jeton', async () => {
   reponses = [{ __statut: 401, type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }];
   const r = await api('POST', '/api/agent/tester', {});

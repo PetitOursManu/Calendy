@@ -54,6 +54,16 @@ Ces trois actions sont dans la fiche d'un post (boutons **Déplacer**, **Cloner*
 - **Cloner** : une copie du post par date, plusieurs dates à la fois. Les copies reprennent le texte, les hashtags, l'événement et les images, carrousel compris (chaque copie a ses propres fichiers) et repartent en **idée à valider**, même si l'original est validé ou publié. Sur le calendrier, **glisser un post sur un jour avec Ctrl enfoncé** (Option sur Mac) crée une copie. Annuler supprime les copies.
 - **Fusionner** : réunit deux posts qui n'ont **aucun réseau en commun** (typiquement le post Instagram et le post Facebook d'un même sujet) en un seul post prévu sur les deux réseaux. Tu choisis le second post dans une liste (les plus probables en premier : même jour, titre proche), puis, pour chaque point où les deux diffèrent (titre, légende, hashtags, date, images…), la version à garder (pour les images Instagram + Facebook, c'est le carrousel entier de l'un ou de l'autre, ou aucune image). Ce qui n'existe que d'un côté est repris automatiquement. Si les statuts diffèrent, le choix proposé par défaut est « idée à valider ». Le second post est **supprimé** et les images écartées ne sont plus utilisées ; **Annuler** remet les deux posts comme avant.
 
+### Comparer des posts
+
+Dans la fiche d'un post, le bouton **Comparer…** permet de choisir **un ou deux autres posts** (les plus proches sont proposés en premier : même événement, titre ressemblant, date voisine ; une recherche par titre trouve les autres). Les 2 ou 3 posts s'affichent **côte à côte, champ par champ** : titre, date et heure, réseaux, statut, événement, légende, hashtags, idée d'image, images, atelier, angle, point de vigilance. Les champs identiques partout sont signalés « (identique) ».
+
+Le bouton **Surligner les différences** met en jaune les mots qui ne se retrouvent pas dans au moins un des autres posts (et les valeurs entières qui diffèrent, comme la date ou le statut). On peut aussi le demander à l'agent IA (« surligne les différences »), qui résume ensuite ce qui change. **Le surlignage n'est jamais copié** : un copier-coller depuis cette fenêtre, comme l'icône de copie, ne donne que le texte. Les valeurs affichées sont celles enregistrées : une saisie en cours dans la fiche n'y figure pas. **Ouvrir ce post** passe à la fiche d'un des autres posts, **Changer les posts** revient au choix.
+
+### Copier un champ
+
+Chaque champ de texte de la fiche d'un post (titre, légende, hashtags, idée d'image, atelier, angle, point de vigilance) et d'un événement porte une petite **icône de copie** en haut à droite : un clic copie son contenu dans le presse-papiers, tel qu'il est à l'écran (même non enregistré). Les cases de la fenêtre de comparaison ont la même icône. La copie marche aussi quand Calendy est ouvert par une adresse du réseau local sans HTTPS.
+
 ### Annuler et rétablir
 
 En bas à droite de l'écran, partout dans l'appli (y compris par-dessus une fiche ouverte), les boutons **Annuler** et **Rétablir** reviennent en arrière ou refont la dernière action, avec **Ctrl+Z** et **Ctrl+Y** (ou Ctrl+Maj+Z ; Cmd sur Mac). Dans un champ de saisie, Ctrl+Z garde son rôle habituel : il annule la frappe. Le survol d'un bouton indique l'action concernée.
@@ -67,7 +77,15 @@ En bas à droite de l'écran, partout dans l'appli (y compris par-dessus une fic
 
 Le bouton rond en bas à droite ouvre une petite fenêtre de discussion. L'agent agit directement sur le calendrier : ajouter ou modifier des posts et des événements, les déplacer, changer les statuts, cloner des posts, regarder leurs images. **Supprimer et fusionner demandent toujours un clic sur « Confirmer »** ; tout le reste s'annule avec le bouton Annuler.
 
-Quand un post est ouvert, l'agent s'affiche à côté de la fiche et travaille dessus par défaut : un bouton **Corriger les fautes** est proposé, et on peut lui demander n'importe quelle modification. Ses changements sont enregistrés aussitôt et apparaissent dans la fiche ; une saisie non enregistrée sur un autre champ reste en place. Sur un post pas encore créé, il remplit simplement le formulaire, à enregistrer soi-même.
+Quand un post est ouvert, l'agent s'affiche à côté de la fiche et travaille dessus par défaut : trois boutons sont proposés, et on peut lui demander n'importe quelle modification :
+
+- **Corriger les fautes** : orthographe, grammaire et typographie seulement ; le ton, les emojis et les hashtags ne bougent pas.
+- **Adapter Insta/Facebook** : retouche légèrement la légende pour ces réseaux : accroche vivante, ton chaleureux, plus d'emojis pour rythmer, paragraphes courts, appel à l'action, jusqu'à une quinzaine de hashtags.
+- **Adapter LinkedIn** : retouche légèrement la légende dans un ton plus professionnel : accroche claire, trois emojis au plus, paragraphes structurés qui mettent en valeur le savoir-faire et l'inclusion, une question pour faire réagir, 3 à 5 hashtags.
+
+L'adaptation garde le fond du message et le texte [entre crochets], n'invente aucun fait et ne change pas les réseaux cochés. Elle n'utilise pas les lettres « stylisées » (𝗴𝗿𝗮𝘀, 𝘪𝘵𝘢𝘭𝘪𝘲𝘶𝘦) que les lecteurs d'écran ne savent pas lire. La légende étant commune à tous les réseaux du post, l'adaptation la remplace : pour garder deux versions, clone d'abord le post (un pour Instagram et Facebook, un pour LinkedIn), et compare-les ensuite avec **Comparer…**. Un clic sur Annuler revient au texte d'avant.
+
+Les changements de l'agent sont enregistrés aussitôt et apparaissent dans la fiche ; une saisie non enregistrée sur un autre champ reste en place. Sur un post pas encore créé, il remplit simplement le formulaire, à enregistrer soi-même.
 
 Le **nom de la structure** se règle dans **Réglages, onglet Général** : il est vide par défaut, s'affiche à côté du logo, et il est repris dans l'export Excel et transmis à l'agent.
 
