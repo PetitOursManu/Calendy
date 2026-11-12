@@ -89,9 +89,42 @@ Les changements de l'agent sont enregistrés aussitôt et apparaissent dans la f
 
 Le **nom de la structure** se règle dans **Réglages, onglet Général** : il est vide par défaut, s'affiche à côté du logo, et il est repris dans l'export Excel et transmis à l'agent.
 
-Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images). Le bouton **Tester la connexion** vérifie la clé et le modèle.
+Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images, créer des visuels Mocky). Le bouton **Tester la connexion** vérifie la clé et le modèle.
 
 La clé est conservée sur le serveur dans `agent.json` (dans le dossier des données, séparé de `data.json`) et n'est jamais renvoyée au navigateur. Les variables `ANTHROPIC_API_KEY` et `OPENROUTER_API_KEY`, si elles existent, ont la priorité. Toute personne qui a accès à Calendy peut utiliser l'agent, donc consommer le crédit de cette clé. Les textes concernés, et les images si l'autorisation est cochée, sont envoyés au fournisseur choisi.
+
+## Visuels avec Mocky
+
+Calendy peut demander à **Mocky** le visuel d'un post. Il récupère ensuite deux fichiers : le **PNG**, aux pixels exacts du format (4:5 pour Instagram et Facebook, 1.91:1 pour LinkedIn), et un **fichier Canva** (.pptx « tout en éléments séparés » : chaque forme, image et texte se modifie à part dans Canva).
+
+**Un projet Mocky par post.** Le premier visuel d'un post crée un nouveau projet dans Mocky, à partir d'un **modèle de projet** Mocky : sa direction artistique, ses réglages et ses écrans, que le nouveau visuel suit. Le visuel de l'autre réseau du même post est ajouté dans ce même projet.
+
+**Le choix du modèle**, dans **Réglages → Mocky** :
+1. le modèle de l'**événement** du post, s'il en a un ;
+2. sinon celui de son **thème** (le champ « Atelier ou thème », sans tenir compte des majuscules ni des accents) ;
+3. sinon le **modèle par défaut** ;
+4. sinon aucun : Mocky invente un style.
+
+Dans la fiche, la liste « Automatique : … » annonce le modèle retenu, et on peut en choisir un autre pour ce post.
+
+**Dans la fiche d'un post enregistré**, l'encadré **Visuels Mocky** propose, pour chaque réseau coché :
+- **Créer le visuel avec Mocky**. Cela prend de 30 secondes à quelques minutes, sans bloquer l'appli. Le PNG se range en premier dans les images du réseau.
+- **Ouvrir dans Mocky**, pour retoucher à la main.
+- **Télécharger pour Canva (.pptx)** : dans Canva, *Importer* ce fichier.
+- **Demander une modification**, par exemple « mets le titre plus gros ». Mocky modifie l'écran en gardant sa version précédente, puis Calendy remplace le PNG et le fichier Canva.
+- **Reprendre depuis Mocky** : récupère le PNG et le fichier Canva à jour après une retouche faite à la main dans Mocky.
+
+À savoir :
+- Chaque arrivée d'un visuel s'annule avec **Annuler**, fichier Canva compris.
+- Une copie d'un post (Cloner) n'est pas liée au projet Mocky de l'original.
+- L'agent IA sait aussi créer et modifier ces visuels (« fais le visuel Instagram de ce post »), si l'autorisation est cochée dans ses réglages.
+- Mocky ne fait qu'un design à la fois : une seule création à la fois, donc.
+
+**Ce qu'il faut côté Mocky** :
+- les **assistants (MCP)** et les **clés d'assistant** activés par l'administrateur (Admin → Assistants (MCP)) ;
+- une **clé d'assistant en « Lecture + écriture »** (Réglages → Assistants connectés).
+
+Calendy garde l'adresse de Mocky et la clé sur son serveur (`mocky.json`, ou les variables `MOCKY_URL` et `MOCKY_API_KEY`) ; la clé n'est jamais renvoyée au navigateur. Il faut une version de Mocky qui propose les outils `export_screen` et `list_templates`.
 
 ### Export Excel
 
@@ -165,6 +198,7 @@ Sauvegarde : copie `data.json` **et le dossier `images`** du volume. `historique
 | `CALENDY_TZ` | Fuseau horaire des dates et heures des posts, utilisé pour passer les posts « Planifié » en « Publié » à l'échéance | `Europe/Paris` |
 | `CALENDY_NO_SEED` | `1` pour ne pas charger `seed.json` au premier démarrage | non défini |
 | `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` | Clés de l'agent IA, prioritaires sur celles saisies dans les réglages | aucune |
+| `MOCKY_URL`, `MOCKY_API_KEY` | Adresse de Mocky et clé d'assistant (`mocky_ak_…`) pour les visuels, prioritaires sur les réglages | aucune |
 | `CALENDY_HISTORIQUE_MAX` | Nombre d'actions gardées pour Annuler / Rétablir (`0` désactive l'annulation) | `100` |
 
 Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_TOKEN` et `CALENDY_EXPORT_DIR`.
@@ -172,7 +206,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 64 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA
+npm test                # 72 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -199,6 +233,11 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | `POST /agent/tester` | Vérifie la clé et le modèle enregistrés |
 | `POST /agent/message` | Échange avec l'agent : `{ "messages": [...], "contexte": {...} }`. Répond `{ reponse, actions, confirmations, formulaire }` |
 | `POST /agent/confirmer` | Confirme ou refuse une suppression ou une fusion : `{ "id": "...", "accepter": true }` |
+| `GET/PUT /mocky/reglages`, `POST /mocky/tester`, `GET /mocky/modeles` | Réglages Mocky (adresse, clé jamais renvoyée, modèle par défaut, `themes: [{ theme, modele }]`, `evenements: { id: modele }`), test de connexion, modèles de projet du compte Mocky |
+| `POST /posts/:id/mocky` | Lance un visuel : `{ "visuel": "meta" \| "linkedin", "action": "creer" \| "modifier" \| "reprendre", "modele": "…", "instruction": "…" }`. Répond `202` avec la tâche ; `409` si Mocky travaille déjà |
+| `GET /mocky/taches`, `GET /mocky/taches/:id` | Suivi des tâches : `etat` = `en_cours`, `fini` ou `echec`, `etape`, `message` |
+| `GET /posts/:id/mocky/modele` | Le modèle que les règles choisissent pour ce post : `{ modele, raison }` |
+| `GET /posts/:id/canva/meta` (idem `linkedin`) | Télécharge le fichier Canva (.pptx) du visuel Mocky |
 | `GET /export.xlsx` | Export Excel : `statuts` (`valide,planifie,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
 | `GET /health` | Contrôle de santé, sans jeton |
 
