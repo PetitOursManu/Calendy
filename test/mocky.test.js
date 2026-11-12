@@ -25,6 +25,7 @@ let dataDir;
 let mocky;
 let portMocky;
 const appels = [];
+const requetesIa = [];
 let ecran = 0;
 
 async function api(method, url, body) {
@@ -44,15 +45,27 @@ function fauxMocky() {
   const ok = (structured) => ({ content: [{ type: 'text', text: 'ok' }], structuredContent: structured });
   const garder = (name) => (args) => { appels.push({ name, args }); return null; };
   server.registerTool('list_templates', { inputSchema: {} }, async () => { garder('list_templates')({}); return ok({ templates: [{ id: 'tcuisine', name: 'Cuisine', screens: 2 }, { id: 'trose', name: 'Octobre Rose', screens: 1 }] }); });
-  const design = { brief: z.string(), follow_layout: z.boolean().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
+  const design = { brief: z.string(), follow_layout: z.boolean().optional(), page_format: z.string().optional(), style: z.string().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
   server.registerTool('create_design', { inputSchema: { ...design, project_name: z.string().optional(), template_id: z.string().optional() } }, async (args) => {
     garder('create_design')(args);
+    if (args.engine === 'client') {
+      // Comme Mocky (contractResult) : ses règles, puis la demande, et un travail qui attend le code.
+      return { content: [{ type: 'text', text: 'Mocky a tout préparé.\n\n## RÈGLES (le système de Mocky)\nREGLES-DE-MOCKY\nLAYOUT MODEL — code du modèle : <Doc>MODELE</Doc>\n\n## DEMANDE\nDEMANDE-DU-POST' }], structuredContent: { status: 'awaiting_code', jobId: 'job-client', round: 0 } };
+    }
     // Première réponse : encore en cours, comme un vrai design qui dépasse 40 s.
     return ok({ status: 'running', jobId: `job-${++ecran}` });
   });
   server.registerTool('add_screen', { inputSchema: { ...design, project_id: z.string() } }, async (args) => {
     garder('add_screen')(args);
     return ok({ status: 'done', projectId: args.project_id, screenId: `s${++ecran}`, link: `http://mocky.test/p/${args.project_id}?screen=s${ecran}` });
+  });
+  server.registerTool('submit_screen', { inputSchema: { job_id: z.string(), code: z.string() } }, async (args) => {
+    garder('submit_screen')(args);
+    // Le premier envoi « ne s'affiche pas » : Calendy doit faire corriger CETTE erreur, puis renvoyer.
+    if (appels.filter((a) => a.name === 'submit_screen').length === 1) {
+      return { content: [{ type: 'text', text: 'Le code soumis ne s’affiche pas.' }], structuredContent: { status: 'awaiting_code', jobId: args.job_id, round: 1, renderError: 'ReferenceError: Foo is not defined' } };
+    }
+    return ok({ status: 'done', projectId: 'p-client', screenId: 's-client', link: 'http://mocky.test/p/p-client?screen=s-client' });
   });
   server.registerTool('get_design', { inputSchema: { job_id: z.string() } }, async (args) => {
     garder('get_design')(args);
@@ -76,6 +89,15 @@ before(async () => {
   mocky = http.createServer(async (req, res) => {
     if (req.url.startsWith('/mcp-export/') && req.url.includes('.png?')) { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(PNG); }
     if (req.url.startsWith('/mcp-export/') && req.url.includes('.pptx?')) { res.writeHead(200); return res.end(PPTX); }
+    if (req.url === '/v1/messages' && req.method === 'POST') {
+      const morceauxIa = [];
+      for await (const c of req) morceauxIa.push(c);
+      const corps = JSON.parse(Buffer.concat(morceauxIa).toString('utf8'));
+      requetesIa.push(corps);
+      const code = requetesIa.length === 1 ? 'export default function App(){ return <Doc>PREMIER</Doc> }' : 'export default function App(){ return <Doc>CORRIGE</Doc> }';
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ id: 'm', type: 'message', role: 'assistant', model: 'x', stop_reason: 'end_turn', content: [{ type: 'text', text: code }], usage: { input_tokens: 1, output_tokens: 1 } }));
+    }
     if (req.url !== '/mcp' || req.method !== 'POST') { res.writeHead(404); return res.end(); }
     if (req.headers.authorization !== `Bearer ${CLE}`) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end('{"error":"invalid_token"}'); }
     const morceaux = [];
@@ -88,7 +110,8 @@ before(async () => {
   });
   await new Promise((r) => mocky.listen(0, '127.0.0.1', r));
   portMocky = mocky.address().port;
-  const env = { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, CALENDY_TOKEN: TOKEN, CALENDY_NO_SEED: '1' };
+  const env = { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, CALENDY_TOKEN: TOKEN, CALENDY_NO_SEED: '1', CALENDY_ANTHROPIC_URL: `http://127.0.0.1:${portMocky}` };
+  delete env.ANTHROPIC_API_KEY;
   delete env.MOCKY_URL;
   delete env.MOCKY_API_KEY;
   child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], { env, stdio: ['ignore', 'pipe', 'inherit'] });
@@ -250,6 +273,49 @@ test('le test de connexion dit quand Mocky est trop ancien (outils absents)', as
     ancien.close();
     await api('PUT', '/api/mocky/reglages', { url: `http://127.0.0.1:${portMocky}/` });
   }
+});
+
+test('réglages : formats, rédacteur et consignes', async () => {
+  assert.equal((await api('PUT', '/api/mocky/reglages', { formats: { meta: 'a4' } })).status, 400);
+  assert.equal((await api('PUT', '/api/mocky/reglages', { redacteur: 'autre' })).status, 400);
+  assert.equal((await api('PUT', '/api/mocky/reglages', { consignes: 'x'.repeat(3001) })).status, 400);
+  const r = (await api('PUT', '/api/mocky/reglages', { formats: { meta: 'social-square' }, consignes: ' Fond clair. ' })).json;
+  assert.deepEqual(r.formats, { meta: 'social-square', linkedin: '' });
+  assert.equal(r.consignes, 'Fond clair.');
+  assert.equal(r.redacteur, 'mocky', 'Mocky écrit par défaut');
+});
+
+test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige une erreur de rendu, et envoie le code à Mocky', async () => {
+  await api('PUT', '/api/agent/reglages', { cles: { anthropic: 'sk-ant-test' }, modeles: { anthropic: 'claude-test' } });
+  await api('PUT', '/api/mocky/reglages', { redacteur: 'calendy', formats: { meta: 'social-square' }, consignes: 'Fond blanc lumineux, une seule photo.' });
+  const p = (await api('POST', '/api/posts', { titre: 'Coffrets', datePublication: '2030-12-01', plateformes: ['Instagram'] })).json;
+  appels.length = 0;
+  requetesIa.length = 0;
+  const fin = await finDeTache((await api('POST', `/api/posts/${p.id}/mocky`, { visuel: 'meta' })).json.id);
+  assert.equal(fin.etat, 'fini', fin.message);
+
+  const creation = appels.find((a) => a.name === 'create_design').args;
+  assert.equal(creation.engine, 'client');
+  assert.equal(creation.page_format, 'social-square');
+  assert.equal(creation.style, 'Fond blanc lumineux, une seule photo.');
+
+  // Le modèle de l'agent a reçu les règles de Mocky (avec le code du modèle), les consignes et la consigne de copie.
+  const [premier, second] = requetesIa;
+  assert.match(premier.system, /REGLES-DE-MOCKY/);
+  assert.match(premier.system, /LAYOUT MODEL — code du modèle/);
+  assert.match(premier.system, /Fond blanc lumineux/);
+  assert.match(premier.system, /PARS DE CE CODE/);
+  assert.deepEqual(premier.messages, [{ role: 'user', content: 'DEMANDE-DU-POST' }]);
+  // L'erreur de rendu revient avec le code précédent : corriger CETTE erreur seulement.
+  assert.equal(second.messages.length, 3);
+  assert.match(second.messages[2].content, /ReferenceError: Foo is not defined/);
+
+  const envois = appels.filter((a) => a.name === 'submit_screen').map((a) => a.args.code);
+  assert.deepEqual(envois, ['export default function App(){ return <Doc>PREMIER</Doc> }', 'export default function App(){ return <Doc>CORRIGE</Doc> }']);
+  const post = (await api('GET', `/api/posts/${p.id}`)).json;
+  assert.equal(post.mocky.projet, 'p-client');
+  assert.equal(post.photos.meta.length, 1);
+  await api('PUT', '/api/mocky/reglages', { redacteur: 'mocky', formats: { meta: '' }, consignes: '' });
 });
 
 test('un refus de Mocky est rapporté dans la tâche', async () => {

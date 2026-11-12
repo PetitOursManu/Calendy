@@ -1094,6 +1094,7 @@ function appliquerVisuelMocky(postId, visuel, r) {
 const mocky = creerMocky({
   dataDir: DATA_DIR,
   HttpError,
+  ecrireCode: (demande) => agent.ecrireCode(demande),
   nomStructure,
   lirePost: (id) => {
     const post = db.posts.find((p) => p.id === id);

@@ -46,19 +46,49 @@ const ERREUR_SERVICE = 424;
 /** Pour comparer deux thèmes sans tenir compte des majuscules, des accents ni des espaces. */
 const cleTheme = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
 
-function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nomStructure, client: clientInjecte }) {
+/** Les formats d'image que Mocky sait faire pour un post (son `page_format`). Vide : celui du type d'écran. */
+const FORMATS = {
+  'social-square': 'Carré 1:1 (1080 × 1080)',
+  'social-portrait': 'Portrait 4:5 (1080 × 1350)',
+  'social-story': 'Story 9:16 (1080 × 1920)',
+  'social-landscape': 'Paysage 1,91:1 (1200 × 628)',
+};
+const REDACTEURS = ['mocky', 'calendy'];
+const CONSIGNES_MAX = 3000;
+
+/**
+ * Quand Calendy écrit lui-même le code (réglage « L'agent IA de Calendy ») : la consigne qui fait de lui un copiste
+ * du modèle, comme le fait Claude Desktop avec la compétence Elisa30. Les règles de Mocky contiennent alors le code
+ * complet du modèle (LAYOUT MODEL) ; le recopier en ne changeant que le contenu est ce qui garde le visuel fidèle.
+ */
+const CONSIGNE_COPIE = `Tu écris pour Calendy le composant d'un visuel de réseau social, en suivant les règles de Mocky ci-dessus.
+Si ces règles contiennent un LAYOUT MODEL (le code d'un modèle choisi par l'utilisateur), PARS DE CE CODE : recopie-le et ne change que le contenu propre à ce post (titres, accroche, liste, textes, photo). Garde à l'identique la structure, les classes, les couleurs, les polices, les tailles et les blocs fixes (coordonnées, contact, emplacement du logo). Vérifie qu'aucun texte de l'ancien sujet ne reste.
+Réponds uniquement par le composant complet, sans explication.`;
+
+/** Les deux parties de ce que Mocky donne à écrire (submit_screen) : ses règles et la demande. */
+function decouperContrat(texte) {
+  const t = String(texte || '');
+  const regles = t.search(/^## (RÈGLES|RULES)\b.*$/m);
+  const demande = Math.max(t.lastIndexOf('\n## DEMANDE'), t.lastIndexOf('\n## REQUEST'));
+  if (regles < 0 || demande < regles) return null;
+  const finTitre = t.indexOf('\n', regles);
+  const debutDemande = t.indexOf('\n', demande + 1);
+  return { regles: t.slice(finTitre + 1, demande).trim(), demande: t.slice(debutDemande + 1).trim() };
+}
+
+function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nomStructure, ecrireCode = null, client: clientInjecte }) {
   const FICHIER = path.join(dataDir, 'mocky.json');
   const taches = new Map();
   let modelesCache = null;
 
   /* ------------------------------ réglages ------------------------------ */
 
-  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', themes: [], evenements: {} });
+  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', themes: [], evenements: {}, formats: { meta: '', linkedin: '' }, redacteur: 'mocky', consignes: '' });
 
   function lire() {
     try {
       const f = JSON.parse(fs.readFileSync(FICHIER, 'utf8'));
-      return { ...defauts(), ...f, themes: Array.isArray(f.themes) ? f.themes : [], evenements: f.evenements && typeof f.evenements === 'object' ? f.evenements : {} };
+      return { ...defauts(), ...f, formats: { ...defauts().formats, ...(f.formats || {}) }, themes: Array.isArray(f.themes) ? f.themes : [], evenements: f.evenements && typeof f.evenements === 'object' ? f.evenements : {} };
     } catch {
       return defauts();
     }
@@ -114,6 +144,23 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       r.cle = cle;
     }
     if ('modeleDefaut' in body) r.modeleDefaut = modeleOuVide(body.modeleDefaut);
+    if ('formats' in body) {
+      if (!body.formats || typeof body.formats !== 'object') throw new HttpError(400, 'Champ « formats » : { meta, linkedin }.');
+      for (const v of Object.keys(VISUELS)) {
+        if (!(v in body.formats)) continue;
+        const f = String(body.formats[v] || '');
+        if (f && !FORMATS[f]) throw new HttpError(400, `Format inconnu : ${f.slice(0, 40)}`);
+        r.formats[v] = f;
+      }
+    }
+    if ('redacteur' in body) {
+      if (!REDACTEURS.includes(body.redacteur)) throw new HttpError(400, 'Champ « redacteur » : mocky ou calendy.');
+      r.redacteur = body.redacteur;
+    }
+    if ('consignes' in body) {
+      if (typeof body.consignes !== 'string' || body.consignes.length > CONSIGNES_MAX) throw new HttpError(400, `Les consignes visuelles sont limitées à ${CONSIGNES_MAX.toLocaleString('fr-FR')} caractères.`);
+      r.consignes = body.consignes.trim();
+    }
     if ('themes' in body) {
       if (!Array.isArray(body.themes) || body.themes.length > 100) throw new HttpError(400, 'Champ « themes » : une liste de 100 règles au plus.');
       const vus = new Set();
@@ -196,7 +243,12 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
             throw erreurMocky(err);
           }
           const texte = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-          if (r.isError) throw new HttpError(ERREUR_SERVICE, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
+          if (r.isError) {
+            if (/moteur « client »|"client" engine/.test(texte)) {
+              throw new HttpError(ERREUR_SERVICE, 'Mocky n’autorise pas l’assistant à écrire le code. Dans Mocky : Admin → Assistants (MCP) → « Qui écrit le code d’un design », choisis « au choix » ou « le modèle de l’assistant ». Sinon, dans Calendy, Réglages → Mocky, choisis « Mocky » pour écrire le visuel.');
+            }
+            throw new HttpError(ERREUR_SERVICE, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
+          }
           return { ...(r.structuredContent || {}), texte };
         },
         async outils() {
@@ -262,6 +314,9 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
         ? 'La clé Mocky est en « Lecture seule » : crée une clé « Lecture + écriture » dans Mocky (Réglages → Assistants connectés).'
         : `Connexion réussie, mais ce Mocky ne propose pas : ${manquants.join(', ')}. Il tourne sur une version antérieure aux exports et aux modèles (pull request « MCP : export PNG / PPTX Canva et nouveau projet depuis un modèle »). Dans Coolify, relance un déploiement depuis la branche main qui RECONSTRUIT l’image (pas un simple redémarrage). Outils proposés aujourd’hui : ${offerts.join(', ') || 'aucun'}.`);
     }
+    if (lire().redacteur === 'calendy' && !offerts.includes('submit_screen')) {
+      throw new HttpError(ERREUR_SERVICE, 'Connexion réussie, mais ce Mocky ne laisse pas l’assistant écrire le code, et Calendy est réglé pour l’écrire. Dans Mocky : Admin → Assistants (MCP) → « Qui écrit le code d’un design », choisis « au choix » ou « le modèle de l’assistant ». Ou choisis ici « Mocky » pour écrire le visuel.');
+    }
     const liste = await listerModeles({ frais: true });
     return { ok: true, message: liste.length ? `Connexion réussie : ${liste.length} modèle${liste.length > 1 ? 's' : ''} de projet dans ce compte Mocky.` : 'Connexion réussie, mais ce compte Mocky n’a encore aucun modèle de projet (dans Mocky : Exporter → Enregistrer comme modèle).', modeles: liste };
   }
@@ -296,10 +351,44 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
   }
 
   /** Attend la fin d'un travail Mocky : chaque appel à get_design attend lui-même une quarantaine de secondes. */
+  /**
+   * Quand Mocky attend le code (moteur « client ») : l'agent de Calendy l'écrit à partir des règles de Mocky, des
+   * consignes visuelles et de la consigne de copie, puis le renvoie. Une erreur de rendu revient corriger CETTE erreur.
+   */
+  function ecrivain(r0) {
+    const reglages = lire();
+    const historique = [];
+    let contrat = null;
+    return async (r) => {
+      if (!ecrireCode) throw new HttpError(ERREUR_SERVICE, 'L’agent IA de Calendy n’est pas disponible pour écrire le visuel.');
+      if (!contrat) {
+        contrat = decouperContrat(r.texte || r0.texte);
+        if (!contrat) throw new HttpError(ERREUR_SERVICE, 'Mocky a demandé le code sans donner ses règles : réessaie.');
+        historique.push({ role: 'user', content: contrat.demande });
+      } else {
+        historique.push({ role: 'user', content: `Le code envoyé ne s'affiche pas. Erreur de rendu :\n${String(r.renderError || r.texte || '').slice(0, 2000)}\n\nCorrige CETTE erreur seulement, sans rien changer d'autre, et renvoie le composant complet.` });
+      }
+      const systeme = [contrat.regles, reglages.consignes ? `CONSIGNES VISUELLES DE L'UTILISATEUR (à respecter) :\n${reglages.consignes}` : '', CONSIGNE_COPIE].filter(Boolean).join('\n\n');
+      const code = await ecrireCode({ systeme, messages: historique });
+      if (!code.trim()) throw new HttpError(ERREUR_SERVICE, 'L’agent IA n’a pas écrit de code pour ce visuel.');
+      historique.push({ role: 'assistant', content: code });
+      return code.slice(0, 300000);
+    };
+  }
+
   async function attendre(m, reponse, tache) {
     const limite = Date.now() + ATTENTE_MAX;
     let r = reponse;
+    let ecrire = null;
     while (r.status !== 'done') {
+      if (r.status === 'awaiting_code' && lire().redacteur === 'calendy') {
+        ecrire = ecrire || ecrivain(r);
+        tache.etape = 'L’agent IA écrit le visuel';
+        const code = await ecrire(r);
+        tache.etape = 'Mocky vérifie le code';
+        r = await m.outil('submit_screen', { job_id: r.jobId, code });
+        continue;
+      }
       if (r.status === 'failed') throw new HttpError(ERREUR_SERVICE, `Mocky n’a pas pu faire le visuel : ${String(r.error || r.texte || '').slice(0, 300)}`);
       if (r.status === 'needs_clarification') throw new HttpError(ERREUR_SERVICE, 'Mocky demande plus de précisions : complète la description, l’angle ou l’idée d’image du post, puis réessaie.');
       if (r.status === 'awaiting_code') throw new HttpError(ERREUR_SERVICE, 'Ce compte Mocky fait écrire le code par l’assistant : dans Mocky, Réglages → Assistants connectés, choisis « Le modèle de Mocky ».');
@@ -337,13 +426,17 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       if (action === 'creer') {
         const choix = demande.modele !== undefined ? { modele: demande.modele } : modelePour(post);
         modele = choix.modele;
+        const reglages = lire();
         const commun = {
           brief: briefDe(post, visuel),
           screen_type: VISUELS[visuel].ecran,
           screen_name: `${post.titre} · ${VISUELS[visuel].court}`.slice(0, 80),
           kind: `Post ${VISUELS[visuel].libelle}`,
           audience: nomStructure() ? `Les abonnés de ${nomStructure()}` : undefined,
-          engine: 'mocky',
+          // « client » : Mocky prépare tout et c'est l'agent de Calendy qui écrit le code (voir ecrivain).
+          engine: reglages.redacteur === 'calendy' ? 'client' : 'mocky',
+          ...(reglages.formats[visuel] ? { page_format: reglages.formats[visuel] } : {}),
+          ...(reglages.consignes ? { style: reglages.consignes.slice(0, 300) } : {}),
           ...(post.imageIdee ? { picture_subject: post.imageIdee.slice(0, 300) } : {}),
         };
         let r = null;
@@ -427,7 +520,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     return { status: 202, body: vueTache(tache) };
   }
 
-  return { publics, modifier, tester, listerModeles, modelePour: (post) => modelePour(post), lancer, listerTaches, lireTache, VISUELS };
+  return { publics, modifier, tester, listerModeles, modelePour: (post) => modelePour(post), lancer, listerTaches, lireTache, VISUELS, FORMATS };
 }
 
-module.exports = { creerMocky, cleTheme };
+module.exports = { creerMocky, cleTheme, decouperContrat };
