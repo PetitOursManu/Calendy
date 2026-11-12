@@ -124,6 +124,16 @@ function heure(value) {
   return value;
 }
 
+/** Lien public vers le projet Canva du post : une adresse http(s), ou rien. */
+function lienCanva(value) {
+  const s = str(value, 'lienCanva', { max: 500 }).trim();
+  if (!s) return '';
+  let u;
+  try { u = new URL(s); } catch { throw new HttpError(400, 'lienCanva : colle l’adresse complète du lien Canva (https://…).'); }
+  if (!/^https?:$/.test(u.protocol)) throw new HttpError(400, 'lienCanva : le lien doit commencer par https://.');
+  return u.href;
+}
+
 function hashtags(value) {
   if (value === undefined || value === null || value === '') return '';
   const raw = Array.isArray(value) ? value.join(' ') : value;
@@ -594,6 +604,7 @@ function cleanPost(input, current = null) {
   if (has(input, 'atelier')) out.atelier = str(input.atelier, 'atelier', { max: 200 });
   if (has(input, 'angle')) out.angle = str(input.angle, 'angle', { max: 1000 });
   if (has(input, 'vigilance')) out.vigilance = str(input.vigilance, 'vigilance', { max: 2000 });
+  if (has(input, 'lienCanva')) out.lienCanva = lienCanva(input.lienCanva);
   if (has(input, 'statut')) out.statut = statut(input.statut);
   if (has(input, 'eventId')) {
     const id = input.eventId || null;
@@ -689,7 +700,7 @@ function clonerPost(id, body) {
   return { status: 201, body: { clones } };
 }
 
-const CHAMPS_FUSION = ['titre', 'datePublication', 'heure', 'description', 'hashtags', 'imageIdee', 'eventId', 'atelier', 'angle', 'vigilance', 'statut'];
+const CHAMPS_FUSION = ['titre', 'datePublication', 'heure', 'description', 'hashtags', 'imageIdee', 'eventId', 'atelier', 'angle', 'vigilance', 'lienCanva', 'statut'];
 const estVide = (v) => v === undefined || v === null || v === '';
 
 /**
@@ -906,6 +917,8 @@ async function buildWorkbook(posts, { photos = true } = {}) {
     { header: 'Angle du post', key: 'angle', width: 40 },
     { header: 'Point de vigilance', key: 'vigilance', width: 40 },
     { header: 'Statut', key: 'statut', width: 15 },
+    // En dernier : ajoutée après coup, elle ne décale aucune colonne d'un fichier qu'on a l'habitude de lire.
+    { header: 'Lien Canva', key: 'canva', width: 34 },
   ];
   styleHeader(ws.getRow(1));
   for (const p of posts) {
@@ -926,6 +939,7 @@ async function buildWorkbook(posts, { photos = true } = {}) {
       explication: ev ? ev.explication : '',
       angle: p.angle,
       vigilance: p.vigilance,
+      canva: p.lienCanva ? { text: 'Ouvrir dans Canva', hyperlink: p.lienCanva } : '',
       statut: STATUT_LIBELLES[p.statut],
     });
     row.alignment = { vertical: 'top', wrapText: true };
@@ -933,6 +947,7 @@ async function buildWorkbook(posts, { photos = true } = {}) {
     row.getCell('titre').font = { ...FONT, bold: true };
     row.getCell('statut').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: STATUT_COULEURS[p.statut] } };
     row.getCell('statut').font = { ...FONT, bold: true };
+    if (p.lienCanva) row.getCell('canva').font = { ...FONT, color: { argb: 'FF2353B0' }, underline: true };
 
     if (avecPhotos) {
       const COLONNES_TEXTE = [['titre', 38], ['description', 70], ['hashtags', 34], ['image', 40], ['evenement', 30], ['explication', 52], ['angle', 40], ['vigilance', 40]];

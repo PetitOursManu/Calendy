@@ -250,7 +250,7 @@ dialog.modal{width:min(500px,calc(100vw - 28px));border-radius:var(--r-l);box-sh
 .f{display:grid;gap:6px}
 .f>span,legend{font-weight:700;font-size:14.5px}
 .f>span em,legend em{font-weight:400;font-style:normal;color:var(--mute);font-size:13.5px;margin-left:4px}
-input[type=text],input[type=date],input[type=time],input[type=password],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--champ);border-radius:var(--r-s);background:var(--surface);transition:border-color .15s}
+input[type=text],input[type=url],input[type=date],input[type=time],input[type=password],select,textarea{width:100%;padding:10px 12px;border:1.5px solid var(--champ);border-radius:var(--r-s);background:var(--surface);transition:border-color .15s}
 textarea{resize:vertical;min-height:2.6em;line-height:1.45}
 input:hover,select:hover,textarea:hover{border-color:var(--ink)}
 /* surcouche des champs de saisie : même texte, invisible, avec un fond derrière les [crochets].
@@ -412,6 +412,9 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 .mk-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .mk-ligne select{flex:1;min-width:180px;width:auto}
 .mk-ligne a.btn{text-decoration:none}
+.canva-ligne{display:flex;gap:8px;align-items:center}
+.canva-ligne input{flex:1;min-width:0}
+.canva-ligne a.btn{text-decoration:none;flex:none}
 .mk-modif{display:flex;gap:8px;align-items:flex-end}
 .mk-modif textarea{flex:1;min-height:2.6em}
 .mk-etat{font-weight:700;font-size:14px}
@@ -1514,6 +1517,10 @@ function postForm(p, isNew) {
           <div class="ph-grid">${photoSlotHtml(p, 'meta')}${photoSlotHtml(p, 'linkedin')}</div>
           <p class="hint">Instagram et Facebook utilisent les mêmes images, LinkedIn a les siennes. Plusieurs images forment un carrousel : leurs numéros donnent l’ordre de publication, et les flèches ← → les déplacent. Seuls les réseaux cochés plus haut apparaissent ici.</p>
         </fieldset>
+        <div class="f-copie"><div class="f"><label class="f" for="lienCanva"><span>Lien du projet Canva <em>facultatif</em></span></label>
+          <div class="canva-ligne"><input type="url" id="lienCanva" name="lienCanva" maxlength="500" spellcheck="false" placeholder="https://www.canva.com/design/…" value="${esc(p.lienCanva || '')}">
+            <a class="btn small" id="lienCanvaOuvrir" href="${esc(p.lienCanva || '#')}" target="_blank" rel="noopener"${p.lienCanva ? '' : ' hidden'}>Ouvrir</a></div>
+          <p class="hint">Dans Canva : Partager → Copier le lien (accès « Toute personne disposant du lien »).</p></div>${boutonCopie('data-action="copier-champ" data-champ="lienCanva"', 'le lien Canva')}</div>
         <fieldset class="mk" id="mkBloc"${state.mocky && state.mocky.pret ? '' : ' hidden'}><legend>Visuels Mocky</legend><div id="mkCorps"></div></fieldset>
         ${avecCopie(`<label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" data-hl maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>`, 'atelier', 'l’atelier ou thème')}
         ${avecCopie(`<label class="f"><span>Angle du post</span><textarea name="angle" data-hl rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>`, 'angle', 'l’angle du post')}
@@ -1791,7 +1798,7 @@ async function submitForm(form) {
       titre: fd.get('titre'), datePublication: fd.get('datePublication'), heure: fd.get('heure') || '',
       plateformes: fd.getAll('plateformes'), eventId: fd.get('eventId') || null, description: fd.get('description'),
       hashtags: fd.get('hashtags'), imageIdee: fd.get('imageIdee'), atelier: fd.get('atelier'), angle: fd.get('angle'),
-      vigilance: fd.get('vigilance'), statut: fd.get('statut'),
+      vigilance: fd.get('vigilance'), lienCanva: (fd.get('lienCanva') || '').trim(), statut: fd.get('statut'),
     };
   } else {
     payload = { nom: fd.get('nom'), dateDebut: fd.get('dateDebut'), dateFin: fd.get('dateFin') || '', explication: fd.get('explication'), lienElisa30: fd.get('lienElisa30') };
@@ -2116,6 +2123,7 @@ function openFusionChoix(idA, idB) {
     ['atelier', 'Atelier ou thème', (p) => p.atelier],
     ['angle', 'Angle du post', (p) => p.angle],
     ['vigilance', 'Point de vigilance', (p) => p.vigilance],
+    ['lienCanva', 'Lien Canva', (p) => p.lienCanva || ''],
   ];
   const conflits = [];
   const repris = [];
@@ -2338,6 +2346,7 @@ function openComparaison(ids, surlignage = false) {
     { cle: 'atelier', label: 'Atelier ou thème', texte: (p) => p.atelier },
     { cle: 'angle', label: 'Angle du post', texte: (p) => p.angle },
     { cle: 'vigilance', label: 'Point de vigilance', texte: (p) => p.vigilance },
+    { cle: 'lienCanva', label: 'Lien Canva', valeur: (p) => p.lienCanva || '' },
   ];
   const copies = []; // ce que copie chaque bouton : toujours la valeur brute, jamais le surlignage
   const cellule = (contenu, texte, nomChamp, classe = '') => {
@@ -2475,7 +2484,7 @@ function majHistorique() {
   }
 }
 
-const CHAMPS_FICHE = { post: ['titre', 'datePublication', 'heure', 'plateformes', 'eventId', 'description', 'hashtags', 'imageIdee', 'atelier', 'angle', 'vigilance', 'statut'], event: ['nom', 'dateDebut', 'dateFin', 'explication', 'lienElisa30'] };
+const CHAMPS_FICHE = { post: ['titre', 'datePublication', 'heure', 'plateformes', 'eventId', 'description', 'hashtags', 'imageIdee', 'atelier', 'angle', 'vigilance', 'lienCanva', 'statut'], event: ['nom', 'dateDebut', 'dateFin', 'explication', 'lienElisa30'] };
 const ficheOuverte = () => { const dlg = $('#drawer'); return dlg.open ? dlg.querySelector('form[data-form=post],form[data-form=event]') : null; };
 const elementDe = (kind, id) => (kind === 'post' ? postById(id) : evById(id));
 
@@ -3214,6 +3223,13 @@ document.addEventListener('submit', (e) => {
 });
 
 document.addEventListener('input', (e) => {
+  if (e.target.id === 'lienCanva') {
+    // « Ouvrir » suit le lien saisi, seulement quand il ressemble à une adresse.
+    const a = $('#lienCanvaOuvrir');
+    const v = e.target.value.trim();
+    a.hidden = !/^https?:\/\/\S+$/.test(v);
+    if (!a.hidden) a.href = v;
+  }
   const form = e.target.closest('form[data-form=post]');
   if (form) { updateCount(form); updatePlanifHint(form); }
 });

@@ -98,6 +98,7 @@ const champsPost = {
   atelier: z.string().max(200).optional().describe('Atelier ou thème : Cuisine, Service en salle, Espaces verts, Industrie, Logistique, Encadrants, Transversal…'),
   angle: z.string().max(1000).optional().describe('Angle éditorial du post, en une phrase.'),
   vigilance: z.string().max(2000).optional().describe("Point de vigilance à vérifier avant publication (droit à l'image, sujet sensible, accord d'une entreprise partenaire…)."),
+  lienCanva: z.string().max(500).optional().describe('Lien public du projet Canva du post (https://…). Chaîne vide pour le retirer.'),
 };
 
 /* ------------------------------------------------------------------ */
@@ -283,6 +284,7 @@ server.registerTool(
           atelier: choixFusion.optional(),
           angle: choixFusion.optional(),
           vigilance: choixFusion.optional(),
+          lienCanva: choixFusion.optional(),
           statut: choixFusion.optional(),
           photo: z.string().optional().describe("Images Instagram + Facebook : identifiant du post dont on garde toutes les images (carrousel entier, jamais mélangé avec l'autre), ou « aucune »."),
         })

@@ -58,6 +58,7 @@ const CHAMPS_POST = {
   atelier: { type: 'string', description: 'Atelier ou thème.' },
   angle: { type: 'string', description: 'Angle du post.' },
   vigilance: { type: 'string', description: 'Point de vigilance.' },
+  lienCanva: { type: 'string', description: 'Lien public du projet Canva du post (https://…), ou chaîne vide.' },
 };
 const CHAMP_STATUT = { type: 'string', enum: ['idee', 'valide', 'planifie', 'refuse', 'publie'], description: 'idee = à valider, valide, planifie (bascule seul en publié à l’échéance ; date future requise), refuse, publie.' };
 const CHAMPS_EVENEMENT = {

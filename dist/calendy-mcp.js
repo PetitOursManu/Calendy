@@ -43548,7 +43548,8 @@ var champsPost = {
   eventId: z.string().nullable().optional().describe("Identifiant de l'\xE9v\xE9nement li\xE9 (voir lister_evenements). null pour d\xE9tacher."),
   atelier: z.string().max(200).optional().describe("Atelier ou th\xE8me : Cuisine, Service en salle, Espaces verts, Industrie, Logistique, Encadrants, Transversal\u2026"),
   angle: z.string().max(1e3).optional().describe("Angle \xE9ditorial du post, en une phrase."),
-  vigilance: z.string().max(2e3).optional().describe("Point de vigilance \xE0 v\xE9rifier avant publication (droit \xE0 l'image, sujet sensible, accord d'une entreprise partenaire\u2026).")
+  vigilance: z.string().max(2e3).optional().describe("Point de vigilance \xE0 v\xE9rifier avant publication (droit \xE0 l'image, sujet sensible, accord d'une entreprise partenaire\u2026)."),
+  lienCanva: z.string().max(500).optional().describe("Lien public du projet Canva du post (https://\u2026). Cha\xEEne vide pour le retirer.")
 };
 var INSTRUCTIONS = `Calendy est le calendrier \xE9ditorial des r\xE9seaux sociaux de l'ESAT Elisa 30 (restaurant Chez Elisa30, ateliers cuisine, service en salle, espaces verts, industrie, logistique).
 Tu proposes des id\xE9es de posts ; c'est l'utilisateur qui d\xE9cide lesquels sont retenus.
@@ -43706,6 +43707,7 @@ server.registerTool(
         atelier: choixFusion.optional(),
         angle: choixFusion.optional(),
         vigilance: choixFusion.optional(),
+        lienCanva: choixFusion.optional(),
         statut: choixFusion.optional(),
         photo: z.string().optional().describe("Images Instagram + Facebook : identifiant du post dont on garde toutes les images (carrousel entier, jamais m\xE9lang\xE9 avec l'autre), ou \xAB aucune \xBB.")
       }).optional().describe("Champs pour lesquels on ne veut pas la valeur par d\xE9faut.")

@@ -352,7 +352,8 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
           // Le projet de ce post existe déjà (l'autre réseau, ou une version précédente) : on y ajoute l'écran.
           tache.etape = 'Ajout de l’écran au projet du post';
           try {
-            r = await m.outil('add_screen', { ...commun, project_id: projet });
+            // follow_layout : même composition que le visuel déjà fait dans ce projet (ou que le modèle).
+            r = await m.outil('add_screen', { ...commun, project_id: projet, follow_layout: true });
           } catch (err) {
             if (!/projet|project/i.test(err.message)) throw err;
             r = null; // le projet a été supprimé dans Mocky : on en recrée un
