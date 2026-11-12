@@ -6,7 +6,7 @@
  * - Un projet Mocky par post : le premier visuel crée le projet, à partir du modèle choisi (create_design avec
  *   template_id) ; le second visuel du même post (l'autre réseau) est ajouté dans ce même projet (add_screen).
  * - Le modèle se choisit par événement, puis par thème (l'atelier du post), puis le modèle par défaut.
- * - Une modification demandée passe par edit_design (Mocky garde la version précédente) ; « Reprendre depuis Mocky »
+ * - Une modification demandée passe par edit_design (Mocky garde la version précédente) ; « Mettre à jour l'image du post »
  *   ré-exporte simplement l'écran, pour récupérer une retouche faite à la main dans Mocky.
  *
  * Une génération prend de 30 secondes à plusieurs minutes : chaque demande devient une « tâche » suivie par
@@ -304,7 +304,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       if (r.status === 'needs_clarification') throw new HttpError(ERREUR_SERVICE, 'Mocky demande plus de précisions : complète la description, l’angle ou l’idée d’image du post, puis réessaie.');
       if (r.status === 'awaiting_code') throw new HttpError(ERREUR_SERVICE, 'Ce compte Mocky fait écrire le code par l’assistant : dans Mocky, Réglages → Assistants connectés, choisis « Le modèle de Mocky ».');
       if (!r.jobId) throw new HttpError(ERREUR_SERVICE, `Réponse inattendue de Mocky : ${String(r.texte || '').slice(0, 200)}`);
-      if (Date.now() > limite) throw new HttpError(ERREUR_SERVICE, 'Mocky met trop de temps : le visuel sera peut-être dans Mocky plus tard ; utilise alors « Reprendre depuis Mocky ».');
+      if (Date.now() > limite) throw new HttpError(ERREUR_SERVICE, 'Mocky met trop de temps : le visuel sera peut-être dans Mocky plus tard ; utilise alors « Mettre à jour l’image du post ».');
       tache.etape = r.progress ? `Mocky travaille (${String(r.progress).slice(0, 40)})` : 'Mocky travaille';
       r = await m.outil('get_design', { job_id: r.jobId });
     }
@@ -414,7 +414,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       () => {
         tache.etat = 'fini';
         tache.etape = '';
-        tache.message = action === 'modifier' ? 'Visuel modifié dans Mocky et mis à jour.' : action === 'reprendre' ? 'Visuel repris depuis Mocky.' : 'Visuel créé avec Mocky.';
+        tache.message = action === 'modifier' ? 'Visuel modifié dans Mocky et mis à jour.' : action === 'reprendre' ? 'Image du post mise à jour depuis Mocky.' : 'Visuel créé avec Mocky.';
         tache.fin = Date.now();
       },
       (err) => {

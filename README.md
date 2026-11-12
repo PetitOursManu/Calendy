@@ -112,7 +112,7 @@ Dans la fiche, la liste « Automatique : … » annonce le modèle retenu, et on
 - **Ouvrir dans Mocky**, pour retoucher à la main.
 - **Télécharger pour Canva (.pptx)** : dans Canva, *Importer* ce fichier.
 - **Demander une modification**, par exemple « mets le titre plus gros ». Mocky modifie l'écran en gardant sa version précédente, puis Calendy remplace le PNG et le fichier Canva.
-- **Reprendre depuis Mocky** : récupère le PNG et le fichier Canva à jour après une retouche faite à la main dans Mocky.
+- **Mettre à jour l'image du post** : après une retouche faite à la main dans Mocky, récupère la dernière version (PNG et fichier Canva) et remplace l'image Mocky du post.
 
 À savoir :
 - Chaque arrivée d'un visuel s'annule avec **Annuler**, fichier Canva compris.
