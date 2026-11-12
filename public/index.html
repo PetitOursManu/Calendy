@@ -2890,6 +2890,18 @@ function afficherReglagesMocky(main, entete) {
         <p class="hint">${cleEnv ? 'La clé vient de la variable MOCKY_API_KEY du serveur.' : 'Dans Mocky : Réglages → Assistants connectés → Clés d’assistant, niveau « Lecture + écriture ». Elle reste sur le serveur de Calendy et n’est jamais renvoyée au navigateur.'}</p>
         <div><button type="button" class="btn small" data-action="mk-retirer-cle"${m.cle.source === 'reglages' ? '' : ' hidden'}>Retirer la clé enregistrée</button></div></div>
       <div class="boutons"><button type="button" class="btn" data-action="mk-tester">Tester la connexion</button></div>
+      <fieldset><legend>Écriture du visuel</legend>
+        <label class="radio"><input type="radio" name="redacteur" value="mocky"${m.redacteur !== 'calendy' ? ' checked' : ''}><span>Mocky <span class="hint">— son propre modèle d’IA dessine le visuel en s’inspirant du modèle de projet.</span></span></label>
+        <label class="radio"><input type="radio" name="redacteur" value="calendy"${m.redacteur === 'calendy' ? ' checked' : ''}><span>L’agent IA de Calendy <span class="hint">— recopie le modèle, ne change que le contenu.</span></span></label>
+        <p class="hint">« L’agent IA de Calendy » est le plus fidèle au modèle. Il utilise la clé de l’agent IA (Réglages → Agent IA), et demande dans Mocky : Admin → Assistants (MCP) → « Qui écrit le code » sur « au choix » ou « le modèle de l’assistant ».</p>
+      </fieldset>
+      <fieldset><legend>Formats</legend>
+        <div class="mk-regle-ev"><span>Instagram + Facebook</span><select name="formatMeta">${optionsFormat(m.formats.meta, 'Celui de Mocky (portrait 4:5)')}</select></div>
+        <div class="mk-regle-ev"><span>LinkedIn</span><select name="formatLinkedin">${optionsFormat(m.formats.linkedin, 'Celui de Mocky (paysage 1,91:1)')}</select></div>
+        <p class="hint">Choisis le même format que tes modèles de projet : un modèle carré adapté en 4:5 perd sa mise en page.</p>
+      </fieldset>
+      <label class="f"><span>Consignes visuelles <em>facultatif</em></span><textarea name="consignes" rows="6" maxlength="3000" placeholder="Fond clair, une seule photo en rapport avec le sujet, couleur principale en petit accent, mentions obligatoires…">${esc(m.consignes || '')}</textarea>
+        <span class="hint">Tes règles de mise en forme, données à chaque visuel. Avec l’agent IA de Calendy, elles sont lues en entier ; avec Mocky, seuls les 300 premiers caractères sont transmis.</span></label>
       <fieldset><legend>Modèle par défaut</legend>
         <select name="modeleDefaut" data-mk-liste data-valeur="${esc(m.modeleDefaut)}"></select>
         <p class="hint">Utilisé quand ni l’événement ni le thème du post n’ont de modèle. « Sans modèle » : Mocky invente un style à chaque post.</p></fieldset>
@@ -2909,6 +2921,9 @@ function afficherReglagesMocky(main, entete) {
   form.addEventListener('submit', (e) => { e.preventDefault(); enregistrerMocky(form).catch(() => {}); });
   remplirListesModeles(form);
 }
+
+const FORMATS_MOCKY = { 'social-square': 'Carré 1:1 (1080 × 1080)', 'social-portrait': 'Portrait 4:5 (1080 × 1350)', 'social-story': 'Story 9:16 (1080 × 1920)', 'social-landscape': 'Paysage 1,91:1 (1200 × 628)' };
+const optionsFormat = (valeur, defaut) => `<option value="">${esc(defaut)}</option>${Object.entries(FORMATS_MOCKY).map(([id, nom]) => `<option value="${id}"${valeur === id ? ' selected' : ''}>${esc(nom)}</option>`).join('')}`;
 
 const ligneTheme = (theme = '', modele = '') => `<div class="mk-regle"><input type="text" data-mk-theme maxlength="200" list="mkThemesConnus" placeholder="Cuisine, Espaces verts…" aria-label="Thème" value="${esc(theme)}"><select data-mk-liste data-valeur="${esc(modele)}" aria-label="Modèle pour ce thème"></select><button type="button" class="icon-btn" data-action="mk-retirer-theme" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
 
@@ -2930,6 +2945,9 @@ async function remplirListesModeles(form, { frais = false } = {}) {
 async function enregistrerMocky(form) {
   const el = form.elements;
   const corps = {
+    redacteur: el.redacteur.value || 'mocky',
+    formats: { meta: el.formatMeta.value, linkedin: el.formatLinkedin.value },
+    consignes: el.consignes.value,
     modeleDefaut: el.modeleDefaut.value,
     evenements: Object.fromEntries([...form.querySelectorAll('select[data-mk-ev]')].filter((s) => s.value).map((s) => [s.dataset.mkEv, s.value])),
     themes: [...form.querySelectorAll('.mk-regle')].map((r) => ({ theme: r.querySelector('[data-mk-theme]').value.trim(), modele: r.querySelector('select').value })).filter((r) => r.theme && r.modele),

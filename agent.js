@@ -579,6 +579,31 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
     return { ok: true, fait: true, message: c.type === 'post' ? 'Post supprimé.' : 'Événement supprimé.' };
   }
 
+  /**
+   * Un texte écrit par le modèle de l'agent, sans outils : le composant d'un visuel Mocky quand Calendy l'écrit
+   * lui-même (réglage « Qui écrit le code du visuel »). Même clé, même modèle que la discussion.
+   */
+  async function ecrireCode({ systeme, messages }) {
+    const cfg = configuration();
+    try {
+      if (cfg.fournisseur === 'anthropic') {
+        const Anthropic = sdkAnthropic();
+        const client = new Anthropic({ apiKey: cfg.cle, baseURL: process.env.CALENDY_ANTHROPIC_URL || undefined });
+        const rep = await client.messages.create({ model: cfg.modele, max_tokens: 16000, system: systeme, messages, output_config: { effort: cfg.effort } });
+        if (rep.stop_reason === 'refusal') throw new HttpError(ERREUR_SERVICE, 'Le modèle de l’agent a refusé d’écrire ce visuel.');
+        if (rep.stop_reason === 'max_tokens') throw new HttpError(ERREUR_SERVICE, 'Le code du visuel était trop long pour le modèle de l’agent.');
+        return rep.content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+      }
+      const data = await requeteOpenRouter('/chat/completions', cfg.cle, { model: cfg.modele, max_tokens: 16000, messages: [{ role: 'system', content: systeme }, ...messages] });
+      const choix = data.choices && data.choices[0];
+      if (!choix || !choix.message) throw new HttpError(ERREUR_SERVICE, 'Réponse vide d’OpenRouter.');
+      if (choix.finish_reason === 'length') throw new HttpError(ERREUR_SERVICE, 'Le code du visuel était trop long pour le modèle de l’agent.');
+      return String(choix.message.content || '');
+    } catch (err) {
+      throw erreurFournisseur(err);
+    }
+  }
+
   /** Vérifie la clé et le modèle enregistrés avec un tout petit échange. */
   async function tester() {
     const cfg = configuration();
@@ -599,7 +624,7 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
       .map((m) => ({ id: m.id, nom: m.name || m.id }));
   }
 
-  return { publics, modifier, discuter, confirmer, tester, listerModeles };
+  return { publics, modifier, discuter, confirmer, tester, listerModeles, ecrireCode };
 }
 
 module.exports = { creerAgent };

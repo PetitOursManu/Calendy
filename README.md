@@ -99,6 +99,12 @@ Calendy peut demander à **Mocky** le visuel d'un post. Il récupère ensuite de
 
 **Un projet Mocky par post.** Le premier visuel d'un post crée un nouveau projet dans Mocky, à partir d'un **modèle de projet** Mocky : sa direction artistique, ses réglages et ses écrans, que le nouveau visuel suit. Le visuel de l'autre réseau du même post est ajouté dans ce même projet, avec la même composition. Un post fait depuis un modèle **reprend la mise en page du modèle** (même structure, typographie, couleurs et ornements ; seul le contenu change). Il faut pour cela une version de Mocky qui gère `follow_layout` : sans elle, seules les couleurs et le logo du modèle sont repris.
 
+**Qui écrit le visuel**, dans **Réglages → Mocky** :
+- **Mocky** (par défaut) : son propre modèle d'IA dessine le visuel en suivant le modèle de projet.
+- **L'agent IA de Calendy** : Mocky prépare tout (photo, règles, code complet du modèle) et c'est l'agent de Calendy qui écrit le visuel en **recopiant le code du modèle** et en ne changeant que le contenu, comme le fait Claude Desktop. C'est le plus fidèle. Il utilise la clé de l'agent IA, et il faut l'autoriser dans Mocky : Admin → Assistants (MCP) → « Qui écrit le code d'un design » sur « au choix » ou « le modèle de l'assistant ». Une erreur d'affichage est renvoyée à l'agent pour qu'il la corrige (deux fois au plus).
+
+**Formats et consignes**, au même endroit : le format de chaque visuel (Instagram + Facebook, LinkedIn : carré 1:1, portrait 4:5, story 9:16 ou paysage 1,91:1 ; par défaut, celui de Mocky), à choisir comme tes modèles ; et des **consignes visuelles** libres (fond, photo, couleurs, mentions obligatoires…), vides par défaut, données à chaque visuel. L'agent IA les lit en entier ; Mocky en reçoit les 300 premiers caractères.
+
 **Le choix du modèle**, dans **Réglages → Mocky** :
 1. le modèle de l'**événement** du post, s'il en a un ;
 2. sinon celui de son **thème** (le champ « Atelier ou thème », sans tenir compte des majuscules ni des accents) ;
@@ -206,7 +212,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 72 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky
+npm test                # 77 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
