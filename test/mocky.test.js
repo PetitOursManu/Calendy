@@ -45,7 +45,7 @@ function fauxMocky() {
   const ok = (structured) => ({ content: [{ type: 'text', text: 'ok' }], structuredContent: structured });
   const garder = (name) => (args) => { appels.push({ name, args }); return null; };
   server.registerTool('list_templates', { inputSchema: {} }, async () => { garder('list_templates')({}); return ok({ templates: [{ id: 'tcuisine', name: 'Cuisine', screens: 2 }, { id: 'trose', name: 'Octobre Rose', screens: 1 }] }); });
-  const design = { brief: z.string(), follow_layout: z.boolean().optional(), page_format: z.string().optional(), style: z.string().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
+  const design = { brief: z.string(), images: z.array(z.object({ image_id: z.string(), use: z.string() })).optional(), follow_layout: z.boolean().optional(), page_format: z.string().optional(), style: z.string().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
   server.registerTool('create_design', { inputSchema: { ...design, project_name: z.string().optional(), template_id: z.string().optional() } }, async (args) => {
     garder('create_design')(args);
     if (args.engine === 'client') {
@@ -67,6 +67,15 @@ function fauxMocky() {
     }
     // Comme Mocky : la capture du visuel accompagne la réponse.
     return { content: [{ type: 'image', data: Buffer.from('capture-visuel').toString('base64'), mimeType: 'image/jpeg' }, { type: 'text', text: 'ok' }], structuredContent: { status: 'done', projectId: 'p-client', screenId: 's-client', link: 'http://mocky.test/p/p-client?screen=s-client' } };
+  });
+  server.registerTool('search_free_images', { inputSchema: { query: z.string(), orientation: z.string().optional() } }, async (args) => {
+    garder('search_free_images')(args);
+    const mini = (n) => Buffer.from(`miniature-${n}`).toString('base64');
+    return { content: [{ type: 'image', data: mini(1), mimeType: 'image/jpeg' }, { type: 'text', text: 'pexels:1 — boxes' }, { type: 'image', data: mini(2), mimeType: 'image/jpeg' }, { type: 'text', text: 'pexels:2 — gift boxes' }], structuredContent: { query: args.query, candidates: [{ id: 'pexels:1' }, { id: 'pexels:2' }] } };
+  });
+  server.registerTool('add_image', { inputSchema: { use: z.string(), free_image_id: z.string().optional() } }, async (args) => {
+    garder('add_image')(args);
+    return ok({ image_id: 'hash-photo-choisie' });
   });
   server.registerTool('get_project', { inputSchema: { project_id: z.string() } }, async (args) => {
     garder('get_project')(args);
@@ -105,8 +114,10 @@ before(async () => {
       const corps = JSON.parse(Buffer.concat(morceauxIa).toString('utf8'));
       requetesIa.push(corps);
       const verifications = requetesIa.filter((x) => /VÉRIFICATION VISUELLE/.test(x.system));
-      const ecritures = requetesIa.filter((x) => !/VÉRIFICATION VISUELLE/.test(x.system));
-      const code = /VÉRIFICATION VISUELLE/.test(corps.system)
+      const ecritures = requetesIa.filter((x) => /PARS DE CE CODE/.test(x.system));
+      const code = /mots-clés EN ANGLAIS/.test(corps.system) ? 'gift boxes ribbon workshop'
+        : /Tu choisis LA photo/.test(corps.system) ? '2'
+        : /VÉRIFICATION VISUELLE/.test(corps.system)
         ? verifications.length === 1 ? '- Mets les trois pastilles à la même largeur, texte sur une ligne.' : 'OK'
         : ecritures.length === 1 ? 'export default function App(){ return <Doc>PREMIER</Doc> }' : 'export default function App(){ return <Doc>CORRIGE</Doc> }';
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -319,7 +330,13 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
   assert.equal(creation.style, 'Pour ce modèle :\nPastilles toutes de la même largeur.\n\nPour tous les visuels :\nFond blanc lumineux, une seule photo.');
 
   // Le modèle de l'agent a reçu les règles de Mocky (avec le code du modèle), les consignes et la consigne de copie.
-  const [premier, second] = requetesIa.filter((x) => !/VÉRIFICATION VISUELLE/.test(x.system));
+  const [premier, second] = requetesIa.filter((x) => /PARS DE CE CODE/.test(x.system));
+  // La photo : des mots en anglais, les miniatures regardées, la n° 2 gardée et ajoutée à Mocky, puis passée au visuel.
+  assert.deepEqual(appels.find((a) => a.name === 'search_free_images').args, { query: 'gift boxes ribbon workshop', orientation: 'square' });
+  const choixPhoto = requetesIa.find((x) => /Tu choisis LA photo/.test(x.system));
+  assert.equal(choixPhoto.messages[0].content.filter((b) => b.type === 'image').length, 2);
+  assert.equal(appels.find((a) => a.name === 'add_image').args.free_image_id, 'pexels:2');
+  assert.deepEqual(creation.images, [{ image_id: 'hash-photo-choisie', use: 'la photo principale du post' }]);
   assert.match(premier.system, /REGLES-DE-MOCKY/);
   assert.match(premier.system, /LAYOUT MODEL — code du modèle/);
   assert.match(premier.system, /Fond blanc lumineux/);
