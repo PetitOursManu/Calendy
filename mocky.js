@@ -67,7 +67,8 @@ Le nouveau texte doit tenir dans la place de l'ancien :
 - garde les mêmes largeurs et hauteurs de blocs, de pastilles et de cadres (ne passe pas d'une largeur fixe à une largeur automatique, ni l'inverse) ;
 - un libellé court (pastille, bouton, étiquette) tient sur UNE ligne : s'il est plus long que celui du modèle, raccourcis-le plutôt que de le laisser passer à la ligne ;
 - les éléments décoratifs liés à un texte (soulignement, filet, surlignage, trait sous un titre) restent à la même place par rapport à ce texte : s'ils ont une position fixe calée sur l'ancien texte, recale-les sur le nouveau ;
-- les icônes restent du même jeu et du même style que celles du modèle ; une icône qui change de sens prend une icône de ce même jeu.
+- les icônes restent du même jeu et du même style que celles du modèle ; une icône qui change de sens prend une icône de ce même jeu ;
+- la photo : si les règles donnent l'adresse d'une photo pour ce post, elle REMPLACE celle du modèle, au même endroit et dans la même forme (arche, cadre…). Ne dessine pas d'illustration à la place d'une photo.
 Réponds uniquement par le composant complet, sans explication.`;
 
 /** Les deux parties de ce que Mocky donne à écrire (submit_screen) : ses règles et la demande. */
@@ -266,7 +267,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
           }
           // Les images (la capture du visuel) servent à la vérification visuelle par l'agent.
           const images = (r.content || []).filter((b) => b.type === 'image' && b.data).map((b) => ({ mime: b.mimeType || 'image/jpeg', data: b.data }));
-          return { ...(r.structuredContent || {}), texte, images };
+          return { ...(r.structuredContent || {}), texte, images, contenu: r.content || [] };
         },
         async outils() {
           try {
@@ -340,7 +341,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
 
   /* ------------------------------ tâches ------------------------------ */
 
-  const vueTache = (t) => ({ id: t.id, postId: t.postId, visuel: t.visuel, action: t.action, etat: t.etat, etape: t.etape, message: t.message, debut: t.debut, fin: t.fin || null });
+  const vueTache = (t) => ({ id: t.id, postId: t.postId, visuel: t.visuel, action: t.action, etat: t.etat, etape: t.etape, message: t.message, remarques: t.remarques || [], debut: t.debut, fin: t.fin || null });
 
   function listerTaches() {
     return [...taches.values()].sort((a, b) => b.debut - a.debut).map(vueTache);
@@ -411,6 +412,69 @@ Relève UNIQUEMENT les défauts de mise en forme du VISUEL : texte qui déborde,
 Ne commente ni le contenu, ni la photo, ni les couleurs choisies par le modèle.
 Si rien n'est à corriger, réponds exactement : OK
 Sinon, réponds par une consigne de modification pour un designer, courte et précise, en liste, qui dit quoi changer et où (par exemple : « Mets les trois pastilles à la même largeur que la plus large, texte sur une ligne »). Pas d'autre texte.`;
+
+  /**
+   * La photo du post, choisie par l'agent comme Claude Desktop le fait : des mots de recherche EN ANGLAIS tirés du
+   * post (la photothèque libre de Mocky ne comprend bien que l'anglais), les miniatures regardées, une photo gardée
+   * ou aucune, ajoutée à la bibliothèque Mocky. Sans elle, Mocky cherchait avec l'idée d'image en français, ne
+   * trouvait souvent rien, et le visuel recevait une illustration dessinée à la place d'une photo.
+   * Renvoie { photo, sujet, note } ; jamais d'erreur : sans photo, Mocky fera avec `sujet`.
+   */
+  const ORIENTATIONS = { 'social-square': 'square', 'social-portrait': 'portrait', 'social-story': 'portrait', 'social-landscape': 'landscape' };
+  async function choisirPhoto(m, post, visuel, modele, tache, reglages) {
+    if (!ecrireCode) return {};
+    tache.etape = 'Recherche d’une photo';
+    const sujetFr = [post.imageIdee && `Idée d'image : ${post.imageIdee}`, `Titre du post : ${post.titre}`, post.atelier && `Atelier ou thème : ${post.atelier}`].filter(Boolean).join('\n');
+    let requete = '';
+    try {
+      requete = (await ecrireCode({
+        systeme: 'Tu prépares la recherche d’une photo libre de droits (Pexels, Pixabay) pour un post de réseau social. Réponds par 3 à 6 mots-clés EN ANGLAIS décrivant ce que la photo doit MONTRER (des objets, un lieu, une action ; jamais de texte ni de logo), sur une seule ligne, sans guillemets ni autre texte.',
+        messages: [{ role: 'user', content: sujetFr }],
+      })).split('\n')[0].replace(/["«»]/g, '').trim().slice(0, 120);
+    } catch {
+      return {};
+    }
+    if (!requete) return {};
+    const format = reglages.formats[visuel] || (visuel === 'linkedin' ? 'social-landscape' : 'social-portrait');
+    let res;
+    try {
+      res = await m.outil('search_free_images', { query: requete, orientation: ORIENTATIONS[format] || 'square' }, DELAI_LECTURE);
+    } catch (err) {
+      return { sujet: requete, note: /not available|pas disponible/i.test(err.message) ? 'Les photos libres ne sont pas ouvertes à ce compte Mocky (Admin → Fournisseurs) : Mocky a fait sans photo choisie.' : `Recherche de photo impossible (${err.message.slice(0, 120)}).` };
+    }
+    // Chaque candidate arrive en deux blocs : sa miniature, puis « id — titre ».
+    const candidates = [];
+    let miniature = null;
+    for (const b of res.contenu || []) {
+      if (b.type === 'image' && b.data) miniature = { mime: b.mimeType || 'image/jpeg', data: b.data };
+      else if (b.type === 'text' && miniature) {
+        const id = String(b.text || '').split(' — ')[0].trim();
+        if (id) candidates.push({ id, miniature });
+        miniature = null;
+      }
+    }
+    if (!candidates.length) return { sujet: requete, note: `Aucune photo libre trouvée pour « ${requete} ».` };
+    const choix = candidates.slice(0, 8);
+    let reponse = '';
+    try {
+      reponse = await ecrireCode({
+        systeme: `Tu choisis LA photo d’un post de réseau social parmi des photos libres. Garde celle qui a un rapport direct avec le sujet, lumineuse, sans texte incrusté, sans personne reconnaissable de face. Si aucune ne convient, réponds AUCUNE. Sinon réponds uniquement par le numéro de la photo.${consignesPour(modele, reglages) ? `\nConsignes visuelles de l'utilisateur :\n${consignesPour(modele, reglages)}` : ''}`,
+        messages: [{ role: 'user', content: [{ type: 'text', text: sujetFr }, ...choix.flatMap((c, i) => [{ type: 'text', text: `Photo ${i + 1} :` }, { type: 'image', ...c.miniature }]), { type: 'text', text: 'Quelle photo ? Réponds par son numéro, ou AUCUNE.' }] }],
+      });
+    } catch {
+      return { sujet: requete };
+    }
+    const n = Number((reponse.match(/\d+/) || [])[0]);
+    if (/AUCUNE/i.test(reponse) || !n || !choix[n - 1]) return { sujet: requete, note: 'Aucune photo libre ne convenait : Mocky a fait sans photo choisie.' };
+    try {
+      tache.etape = 'Ajout de la photo';
+      const ajout = await m.outil('add_image', { free_image_id: choix[n - 1].id, use: (post.imageIdee || post.titre).slice(0, 200) }, DELAI_LECTURE);
+      if (!ajout.image_id) return { sujet: requete };
+      return { photo: { image_id: ajout.image_id, use: 'la photo principale du post' }, sujet: requete };
+    } catch {
+      return { sujet: requete };
+    }
+  }
 
   async function verifier(m, fini, tache, modeleId) {
     if (!ecrireCode) return null;
@@ -515,6 +579,12 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
           ...(consignesPour(modele, reglages) ? { style: consignesPour(modele, reglages).slice(0, 300) } : {}),
           ...(post.imageIdee ? { picture_subject: post.imageIdee.slice(0, 300) } : {}),
         };
+        if (reglages.redacteur === 'calendy') {
+          const { photo, sujet, note } = await choisirPhoto(m, post, visuel, modele, tache, reglages);
+          if (photo) commun.images = [photo];
+          else if (sujet) commun.picture_subject = sujet; // en anglais : Mocky cherche ou génère mieux
+          if (note) tache.remarques.push(note);
+        }
         let r = null;
         const projet = post.mocky && post.mocky.projet;
         if (projet) {
@@ -533,6 +603,8 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
           r = await m.outil('create_design', { ...commun, project_name: `${post.datePublication} · ${post.titre}`.slice(0, 120), ...(modele ? { template_id: modele } : {}) });
         }
         const fini = await attendre(m, r, tache, modele);
+        // Ce que Mocky signale (pas de photo trouvée, texte coupé…) : montré à la fin de la tâche.
+        for (const n of Array.isArray(fini.notes) ? fini.notes : []) if (n && !tache.remarques.includes(n)) tache.remarques.push(String(n).slice(0, 300));
         ({ projectId, screenId } = { projectId: fini.projectId, screenId: fini.screenId });
         lien = fini.link;
         // Comme Claude Desktop qui « contrôle la capture » : l'agent compare le visuel au modèle et fait corriger.
@@ -578,7 +650,7 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
     const enCours = [...taches.values()].find((t) => t.etat === 'en_cours');
     if (enCours) throw new HttpError(409, 'Mocky travaille déjà sur un visuel : attends qu’il ait fini (Mocky fait un design à la fois).');
     const refait = action === 'creer' && Boolean(post.mocky && post.mocky.visuels && post.mocky.visuels[visuel]);
-    const tache = { id: crypto.randomUUID(), postId: post.id, visuel, action, refait, etat: 'en_cours', etape: 'Connexion à Mocky', message: '', debut: Date.now() };
+    const tache = { id: crypto.randomUUID(), postId: post.id, visuel, action, refait, etat: 'en_cours', etape: 'Connexion à Mocky', message: '', remarques: [], debut: Date.now() };
     taches.set(tache.id, tache);
     const anciennes = [...taches.values()].sort((a, b2) => b2.debut - a.debut).slice(TACHES_GARDEES);
     anciennes.forEach((t) => taches.delete(t.id));
@@ -587,6 +659,7 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
         tache.etat = 'fini';
         tache.etape = '';
         tache.message = action === 'modifier' ? 'Visuel modifié dans Mocky et mis à jour.' : action === 'reprendre' ? 'Image du post mise à jour depuis Mocky.' : tache.refait ? 'Visuel refait avec Mocky.' : 'Visuel créé avec Mocky.';
+        if (tache.remarques.length) tache.message += ` Remarques : ${tache.remarques.slice(0, 3).join(' ')}`;
         tache.fin = Date.now();
       },
       (err) => {
