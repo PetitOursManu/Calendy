@@ -402,6 +402,43 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 .mg-auto dd{display:inline;overflow-wrap:anywhere}
 .mg-auto small{color:var(--mute)}
 @media (max-width:640px){.mg-pair{grid-template-columns:1fr}}
+.cand input:disabled+.cand-body{opacity:.5}
+.cand input:disabled{cursor:not-allowed}
+
+/* ---------- copier un champ ---------- */
+.f-copie{position:relative}
+.f-copie>.copie-btn{position:absolute;top:-6px;right:0}
+.copie-btn{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:8px;border:1.5px solid transparent;background:transparent;color:var(--mute);font-size:17px;cursor:pointer;transition:color .15s,border-color .15s,background .15s}
+.copie-btn:hover{color:var(--denim-ink);border-color:var(--line-strong);background:var(--surface)}
+.copie-btn:focus-visible{outline:3px solid var(--denim);outline-offset:1px}
+.copie-btn.ok{color:var(--valide);border-color:var(--valide-line);background:var(--valide-bg)}
+
+/* ---------- comparer des posts côte à côte ---------- */
+dialog.modal.xl{width:min(1240px,calc(100vw - 28px))}
+/* les boutons flottants (agent, annuler) sont en bas à droite : on leur laisse la place à côté de « Fermer » */
+#actionDlg.xl .modal-foot{padding-right:max(22px,calc(190px - (100vw - min(1240px,100vw - 28px)) / 2))}
+.cmp-barre{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:16px 22px 0}
+.cmp-barre .hint{flex:1;min-width:220px}
+.btn[aria-pressed=true]{background:#FFE48A;border-color:#C99A00;color:var(--ink)}
+.cmp-defile{margin:14px 22px 0;overflow-x:auto;padding-bottom:4px}
+.cmp{display:grid;grid-template-columns:repeat(var(--n),minmax(240px,1fr));gap:0 12px;min-width:min-content}
+.cmp-tete{display:grid;gap:6px;align-content:start;padding:12px 14px;border:1.5px solid var(--line-strong);border-radius:var(--r-m);background:var(--soft)}
+.cmp-tete strong{font-size:16px;line-height:1.3;overflow-wrap:anywhere}
+.cmp-tete small{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center;color:var(--mute);font-size:13.5px}
+.cmp-tete .btn{justify-self:start}
+.cmp-label{grid-column:1/-1;margin:16px 0 6px;font-weight:700;font-size:14.5px}
+.cmp-cell{position:relative;min-width:0;padding:9px 40px 9px 12px;border:1.5px solid var(--line);border-radius:var(--r-s);background:var(--surface);white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.45}
+.cmp-cell>.copie-btn{position:absolute;top:4px;right:4px}
+.cmp-cell.vide{color:var(--mute);font-style:italic}
+.cmp-cell .nets{display:inline-flex;gap:6px;vertical-align:middle;margin-right:6px}
+.cmp-cell .mg-imgs .mg-img{width:calc(25% - 3px);max-height:64px}
+.cmp-cell mark.br{background:#FFE48A;font-weight:700;padding:0 2px;border-radius:3px}
+/* surlignage des différences : jamais repris par un copier-coller (la copie depuis cette fenêtre ne garde que le texte) */
+.cmp mark.diff{background:#FFE48A;color:inherit;border-radius:3px;box-shadow:0 0 0 1px #E3B91F}
+.cmp-cell.diff-tout{background:#FFF6CC;border-color:#E3B91F}
+.cmp-legende{display:inline-flex;align-items:center;gap:6px}
+.cmp-legende mark{background:#FFE48A;box-shadow:0 0 0 1px #E3B91F;border-radius:3px;padding:0 4px}
+@media (max-width:640px){.cmp-defile{margin-left:12px;margin-right:12px}.cmp-barre{margin-left:12px;margin-right:12px}}
 
 /* ---------- dock : annuler, rétablir, agent IA (suit la fenêtre ouverte, voir placerDock) ---------- */
 #dock{position:fixed;right:20px;bottom:20px;z-index:70;display:flex;flex-direction:column;align-items:flex-end;gap:12px;color:var(--ink);font-size:15px}
@@ -557,6 +594,8 @@ dialog[open]>#dock{animation:apparait-tard .3s linear}
   <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v3c0 3 3 5 6 5s6-2 6-5V4M12 12v8M9 17l3 3 3-3"/></symbol>
   <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h13l-3 4.500 3 4.500H5"/></symbol>
   <symbol id="i-reglages" viewBox="0 0 24 24"><path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.500"/><circle cx="9" cy="17" r="2.500"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="16" rx="2"/><path d="M9 5V3.5h6V5M9 11h6M9 15h4"/></symbol>
+  <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="7" height="15" rx="1.5"/><rect x="13.5" y="4.5" width="7" height="15" rx="1.5"/><path d="M5.5 9h3M5.5 12h3M15.5 9h3M15.5 12h3"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8 5L3.5 9.5 8 14M4 9.5h10a5.5 5.5 0 0 1 0 11H9"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24"><path d="M16 5l4.5 4.5L16 14M20 9.5H10a5.5 5.5 0 0 0 0 11h5"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M11 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1L4 10.500l5.100-1.900zM18.500 15.500l.8 2.200 2.200.8-2.200.8-.8 2.200-.8-2.200-2.200-.8 2.200-.8z"/></symbol>
@@ -1331,6 +1370,48 @@ function eventsView() {
     ${[...parMois].map(([ym, es]) => moisSection('evenements', ym, es.length, es.map(card).join(''), 'événement')).join('')}`;
 }
 
+/* ================= copier un champ ================= */
+// Le bouton est placé à côté du <label> et non dedans : sinon son nom serait lu avec celui du champ.
+const boutonCopie = (attrs, nom) => `<button type="button" class="copie-btn" ${attrs} title="Copier ${esc(nom)}" aria-label="Copier ${esc(nom)}">${icon('i-clip')}</button>`;
+const avecCopie = (labelHtml, champ, nom) => `<div class="f-copie">${labelHtml}${boutonCopie(`data-action="copier-champ" data-champ="${champ}"`, nom)}</div>`;
+
+/** Copie du texte brut dans le presse-papiers, y compris hors HTTPS (adresse du réseau local), où l'API Clipboard n'existe pas. */
+async function copierTexte(texte, bouton) {
+  let ok = false;
+  if (navigator.clipboard && window.isSecureContext) {
+    try { await navigator.clipboard.writeText(texte); ok = true; } catch { /* on tente l'autre méthode */ }
+  }
+  if (!ok) {
+    // La zone doit être dans la fenêtre ouverte : sous une fenêtre modale, le reste de la page ne peut pas être sélectionné.
+    const hote = (bouton && bouton.closest('dialog[open]')) || document.body;
+    const zone = document.createElement('textarea');
+    zone.value = texte;
+    zone.setAttribute('readonly', '');
+    zone.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none';
+    hote.append(zone);
+    zone.select();
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    zone.remove();
+    if (bouton) bouton.focus();
+  }
+  if (!ok) throw new Error('Copie impossible : sélectionne le texte puis fais Ctrl+C.');
+  if (bouton) {
+    bouton.classList.add('ok');
+    clearTimeout(bouton._ok);
+    bouton._ok = setTimeout(() => bouton.classList.remove('ok'), 1500);
+  }
+}
+
+async function copierChamp(bouton, texte, nom) {
+  if (!String(texte || '').trim()) { toast('Rien à copier : ce champ est vide.'); return; }
+  try {
+    await copierTexte(texte, bouton);
+    toast(`Copié : ${nom}.`);
+  } catch (err) {
+    toast(err.message, { error: true });
+  }
+}
+
 /* ================= tiroir : post ================= */
 function openDrawer(html) {
   const dlg = $('#drawer');
@@ -1391,8 +1472,9 @@ function postForm(p, isNew) {
         ${isNew ? '' : `<div class="dr-tools" role="group" aria-label="Autres actions sur ce post">
           <button type="button" class="btn small" data-action="move-post" data-id="${esc(p.id)}">${icon('i-move')}Déplacer</button>
           <button type="button" class="btn small" data-action="clone-post" data-id="${esc(p.id)}">${icon('i-copy')}Cloner</button>
-          <button type="button" class="btn small" data-action="merge-post" data-id="${esc(p.id)}">${icon('i-merge')}Fusionner…</button></div>`}
-        <label class="f"><span>Titre <em>obligatoire</em></span><input type="text" name="titre" data-hl maxlength="200" required value="${esc(p.titre)}"></label>
+          <button type="button" class="btn small" data-action="merge-post" data-id="${esc(p.id)}">${icon('i-merge')}Fusionner…</button>
+          <button type="button" class="btn small" data-action="compare-post" data-id="${esc(p.id)}">${icon('i-compare')}Comparer…</button></div>`}
+        ${avecCopie(`<label class="f"><span>Titre <em>obligatoire</em></span><input type="text" name="titre" data-hl maxlength="200" required value="${esc(p.titre)}"></label>`, 'titre', 'le titre')}
         <div class="row2">
           <label class="f"><span>Date de publication <em>obligatoire</em></span><input type="date" name="datePublication" required value="${esc(p.datePublication)}"></label>
           <label class="f"><span>Heure</span><input type="time" name="heure" value="${esc(p.heure)}"></label>
@@ -1400,17 +1482,17 @@ function postForm(p, isNew) {
         <fieldset><legend>Réseaux <em>au moins un</em></legend><div class="pills">${nets}</div></fieldset>
         <label class="f"><span>Événement lié</span><select name="eventId">${evOptions}</select></label>
         <div class="evinfo" id="evInfo" aria-live="polite">${evInfoHtml(p.eventId)}</div>
-        <label class="f"><span>Description (légende du post)</span><textarea name="description" data-hl rows="8" maxlength="5000">${esc(p.description)}</textarea></label>
-        <label class="f"><span>Hashtags</span><input type="text" name="hashtags" data-hl value="${esc(p.hashtags)}" placeholder="#MotCle #Exemple"></label>
+        ${avecCopie(`<label class="f"><span>Description (légende du post)</span><textarea name="description" data-hl rows="8" maxlength="5000">${esc(p.description)}</textarea></label>`, 'description', 'la description')}
+        ${avecCopie(`<label class="f"><span>Hashtags</span><input type="text" name="hashtags" data-hl value="${esc(p.hashtags)}" placeholder="#MotCle #Exemple"></label>`, 'hashtags', 'les hashtags')}
         <p class="count" id="count" aria-live="polite"></p>
-        <label class="f"><span>Idée d’image</span><textarea name="imageIdee" data-hl rows="2" maxlength="1000">${esc(p.imageIdee)}</textarea></label>
+        ${avecCopie(`<label class="f"><span>Idée d’image</span><textarea name="imageIdee" data-hl rows="2" maxlength="1000">${esc(p.imageIdee)}</textarea></label>`, 'imageIdee', 'l’idée d’image')}
         <fieldset class="photos"><legend>Photos <em>facultatives</em></legend>
           <div class="ph-grid">${photoSlotHtml(p, 'meta')}${photoSlotHtml(p, 'linkedin')}</div>
           <p class="hint">Instagram et Facebook utilisent les mêmes images, LinkedIn a les siennes. Plusieurs images forment un carrousel : leurs numéros donnent l’ordre de publication, et les flèches ← → les déplacent. Seuls les réseaux cochés plus haut apparaissent ici.</p>
         </fieldset>
-        <label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" data-hl maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>
-        <label class="f"><span>Angle du post</span><textarea name="angle" data-hl rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>
-        <label class="f"><span>Point de vigilance</span><textarea name="vigilance" data-hl rows="2" maxlength="2000">${esc(p.vigilance)}</textarea></label>
+        ${avecCopie(`<label class="f"><span>Atelier ou thème</span><input type="text" name="atelier" data-hl maxlength="200" value="${esc(p.atelier)}" placeholder="Cuisine, Espaces verts, Transversal…"></label>`, 'atelier', 'l’atelier ou thème')}
+        ${avecCopie(`<label class="f"><span>Angle du post</span><textarea name="angle" data-hl rows="2" maxlength="1000">${esc(p.angle)}</textarea></label>`, 'angle', 'l’angle du post')}
+        ${avecCopie(`<label class="f"><span>Point de vigilance</span><textarea name="vigilance" data-hl rows="2" maxlength="2000">${esc(p.vigilance)}</textarea></label>`, 'vigilance', 'le point de vigilance')}
         <fieldset><legend>Statut</legend><div class="pills">${sts}</div><p class="hint" id="planifHint" aria-live="polite"></p></fieldset>
       </div>
       <footer class="dr-foot">
@@ -1485,14 +1567,14 @@ function openEvent(id, defaults = {}) {
     <form class="dr-form" data-form="event" data-id="${esc(e.id)}" ${ev ? 'data-edit' : ''} novalidate>
       <div class="dr-body">
         <div class="form-error" role="alert" hidden></div>
-        <label class="f"><span>Nom <em>obligatoire</em></span><input type="text" name="nom" data-hl maxlength="200" required value="${esc(e.nom)}"></label>
+        ${avecCopie(`<label class="f"><span>Nom <em>obligatoire</em></span><input type="text" name="nom" data-hl maxlength="200" required value="${esc(e.nom)}"></label>`, 'nom', 'le nom')}
         <div class="row2">
           <label class="f"><span>Date de début <em>obligatoire</em></span><input type="date" name="dateDebut" required value="${esc(e.dateDebut)}"></label>
           <label class="f"><span>Date de fin</span><input type="date" name="dateFin" value="${esc(e.dateFin === e.dateDebut ? '' : e.dateFin)}"></label>
         </div>
         <p class="hint">Laisse la date de fin vide pour un événement d’un seul jour.</p>
-        <label class="f"><span>Ce qu’il faut savoir</span><textarea name="explication" data-hl rows="5" maxlength="3000">${esc(e.explication)}</textarea></label>
-        <label class="f"><span>${esc(libelleLien())}</span><textarea name="lienElisa30" data-hl rows="3" maxlength="2000">${esc(e.lienElisa30)}</textarea></label>
+        ${avecCopie(`<label class="f"><span>Ce qu’il faut savoir</span><textarea name="explication" data-hl rows="5" maxlength="3000">${esc(e.explication)}</textarea></label>`, 'explication', 'ce qu’il faut savoir')}
+        ${avecCopie(`<label class="f"><span>${esc(libelleLien())}</span><textarea name="lienElisa30" data-hl rows="3" maxlength="2000">${esc(e.lienElisa30)}</textarea></label>`, 'lienElisa30', 'le lien avec la structure')}
         ${ev ? `<div class="f"><span>Posts liés (${posts.length})</span>${posts.length ? `<div class="ev-posts">${posts.map(chip).join('')}</div>` : '<p class="hint">Aucun post pour cet événement.</p>'}
           <div><button type="button" class="btn small" data-action="new-post" data-event="${esc(ev.id)}" data-date="${esc(ev.dateDebut)}">${icon('i-plus')}Ajouter un post</button></div></div>` : ''}
       </div>
@@ -1648,7 +1730,7 @@ function ouvrirAction(html, { large = false } = {}) {
   const dlg = $('#actionDlg');
   dlg.className = `modal${large ? ' large' : ''}`;
   dlg.innerHTML = html;
-  dlg.showModal();
+  if (!dlg.open) dlg.showModal();
   return dlg;
 }
 
@@ -1914,6 +1996,240 @@ function openFusionChoix(idA, idB) {
   });
 }
 
+/* ================= comparer 2 ou 3 posts côte à côte ================= */
+const COMPARER_MAX = 3;
+
+// Posts à proposer pour la comparaison, les plus probables d’abord : même événement, titre proche, date proche.
+function candidatsComparaison(p) {
+  const A = motsTitre(p.titre);
+  return state.posts
+    .filter((q) => q.id !== p.id)
+    .map((q) => {
+      const B = motsTitre(q.titre);
+      const commun = [...A].filter((w) => B.has(w)).length;
+      const sim = A.size && B.size ? commun / Math.min(A.size, B.size) : 0;
+      const jours = Math.abs(diffDays(p.datePublication, q.datePublication));
+      return { q, score: (p.eventId && q.eventId === p.eventId ? 1.5 : 0) + (jours === 0 ? 1 : 0) + sim - Math.min(jours, 60) / 100 };
+    })
+    .sort((x, y) => y.score - x.score || x.q.datePublication.localeCompare(y.q.datePublication))
+    .map((x) => x.q);
+}
+
+const candidatCoche = (q, coche) => `<label class="cand"><input type="checkbox" name="autre" value="${esc(q.id)}"${coche ? ' checked' : ''}><span class="cand-body"><strong>${escBr(q.titre)}</strong><small><span>${esc(dateAvecJour(q.datePublication))}</span><span class="nets">${q.plateformes.map(badgeReseau).join('')}</span><span>${esc(STATUTS[q.statut])}</span></small></span></label>`;
+
+// Étape 1 : choisir un ou deux autres posts.
+function openComparerChoix(id, deja = []) {
+  const p = postById(id);
+  if (!p) return;
+  const cands = candidatsComparaison(p);
+  if (!cands.length) {
+    ouvrirAction(`<div class="modal-form">${actionHead('Comparer avec d’autres posts')}<div class="am-body"><p>Il n’y a pas encore d’autre post à comparer avec « ${escBr(p.titre)} ».</p></div>
+      <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Fermer</button></div></div>`);
+    return;
+  }
+  const choisis = new Set(deja.filter((x) => x !== id && postById(x)));
+  const dlg = ouvrirAction(`<form class="modal-form" novalidate>${actionHead('Comparer avec d’autres posts')}<div class="am-body">
+    <p><strong>${escBr(p.titre)}</strong><br>${esc(dateAvecJour(p.datePublication))}, sur ${esc(reseauxTxt(p))}.</p>
+    <p class="hint">Choisis un ou deux posts : ils s’afficheront côte à côte avec celui-ci, champ par champ.</p>
+    ${noteBrouillon()}
+    <label class="f"><span>Chercher un post</span><input type="text" id="cmpFiltre" placeholder="Un mot du titre…" autocomplete="off"></label>
+    <div class="cand-list blk" id="cmpListe" role="group" aria-label="Posts à comparer"></div></div>
+    <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Annuler</button><button type="submit" class="btn primary" disabled>${icon('i-compare')}Comparer</button></div></form>`);
+  const form = dlg.querySelector('form');
+  const liste = dlg.querySelector('#cmpListe');
+  const filtre = dlg.querySelector('#cmpFiltre');
+  const suite = form.querySelector('[type=submit]');
+  const majBouton = () => {
+    const n = choisis.size;
+    suite.disabled = n === 0;
+    suite.innerHTML = `${icon('i-compare')}${n ? `Comparer ${n + 1} posts` : 'Comparer'}`;
+    const plein = n >= COMPARER_MAX - 1;
+    liste.querySelectorAll('input[name=autre]').forEach((i) => { i.disabled = plein && !i.checked; });
+  };
+  const dessiner = () => {
+    const motif = filtre.value.trim().toLowerCase();
+    const filtres = cands.filter((q) => !motif || q.titre.toLowerCase().includes(motif));
+    // Les posts déjà cochés restent visibles, même s’ils ne correspondent plus à la recherche.
+    const vus = [...cands.filter((q) => choisis.has(q.id)), ...filtres.filter((q) => !choisis.has(q.id)).slice(0, motif ? 60 : 12)];
+    liste.innerHTML = vus.length
+      ? vus.map((q) => candidatCoche(q, choisis.has(q.id))).join('') + (filtres.length > vus.length ? '<p class="hint">Les plus proches sont affichés : cherche par titre pour trouver les autres.</p>' : '')
+      : '<p class="hint">Aucun post ne correspond.</p>';
+    majBouton();
+  };
+  liste.addEventListener('change', (e) => {
+    if (e.target.name !== 'autre') return;
+    if (e.target.checked) choisis.add(e.target.value); else choisis.delete(e.target.value);
+    majBouton();
+  });
+  filtre.addEventListener('input', dessiner);
+  form.addEventListener('submit', (e) => { e.preventDefault(); if (choisis.size) openComparaison([id, ...choisis]); });
+  dessiner();
+}
+
+/* ---- différences mot à mot ---- */
+const jetonsTexte = (s) => String(s || '').split(/(\s+)/).filter(Boolean);
+const estBlanc = (t) => /^\s+$/.test(t);
+
+/** Pour chaque mot de `a`, vrai s’il fait partie de la plus longue suite commune avec `b`. */
+function motsCommuns(a, b) {
+  const n = a.length;
+  const m = b.length;
+  const garde = new Uint8Array(n);
+  if (!n || !m) return garde;
+  if (n * m > 6e6) { // texte très long : on se contente de « ce mot existe-t-il de l’autre côté ? »
+    const reste = new Map();
+    for (const w of b) reste.set(w, (reste.get(w) || 0) + 1);
+    a.forEach((w, i) => { if (reste.get(w)) { garde[i] = 1; reste.set(w, reste.get(w) - 1); } });
+    return garde;
+  }
+  const L = m + 1;
+  const dp = new Uint16Array((n + 1) * L);
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i * L + j] = a[i] === b[j] ? dp[(i + 1) * L + j + 1] + 1 : Math.max(dp[(i + 1) * L + j], dp[i * L + j + 1]);
+    }
+  }
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { garde[i] = 1; i++; j++; }
+    else if (dp[(i + 1) * L + j] >= dp[i * L + j + 1]) i++;
+    else j++;
+  }
+  return garde;
+}
+
+/** Textes des colonnes → HTML de chaque colonne, avec en <mark class="diff"> les mots absents d’au moins une autre colonne. */
+function differencesHtml(textes) {
+  const jetons = textes.map(jetonsTexte);
+  const mots = jetons.map((js) => js.filter((t) => !estBlanc(t)));
+  return jetons.map((js, k) => {
+    const commun = new Uint8Array(mots[k].length).fill(1);
+    mots.forEach((autres, l) => {
+      if (l === k) return;
+      const g = motsCommuns(mots[k], autres);
+      for (let x = 0; x < commun.length; x++) commun[x] &= g[x];
+    });
+    let html = '';
+    let ouvert = false;
+    let w = 0;
+    js.forEach((t, x) => {
+      if (estBlanc(t)) {
+        // Un espace entre deux mots surlignés reste dans le même surlignage.
+        const suivant = js.slice(x + 1).find((u) => !estBlanc(u));
+        if (ouvert && !(suivant !== undefined && !commun[w])) { html += '</mark>'; ouvert = false; }
+        html += esc(t);
+        return;
+      }
+      const diff = !commun[w++];
+      if (diff && !ouvert) { html += '<mark class="diff">'; ouvert = true; }
+      if (!diff && ouvert) { html += '</mark>'; ouvert = false; }
+      html += esc(t);
+    });
+    if (ouvert) html += '</mark>';
+    return html;
+  });
+}
+
+// Étape 2 : les posts côte à côte, champ par champ.
+function openComparaison(ids, surlignage = false) {
+  const posts = ids.map(postById).filter(Boolean).slice(0, COMPARER_MAX);
+  if (posts.length < 2) { toast('Ces posts n’existent plus.', { error: true }); closeDialog($('#actionDlg')); return; }
+  const nomEv = (p) => { const ev = p.eventId && evById(p.eventId); return ev ? `${ev.nom} (${periode(ev.dateDebut, ev.dateFin)})` : ''; };
+  const resumeImages = (p) => Object.keys(SLOTS).map((s) => { const n = listePhotos(p, s).length; return n ? `${SLOTS[s].titre} : ${n > 1 ? `carrousel de ${n} images` : '1 photo'}` : ''; }).filter(Boolean).join('\n');
+  // texte : comparé mot à mot ; valeur : comparée en bloc (une date, un statut…).
+  const CHAMPS = [
+    { cle: 'titre', label: 'Titre', texte: (p) => p.titre },
+    { cle: 'quand', label: 'Date et heure de publication', valeur: (p) => `${dateAvecJour(p.datePublication)}${p.heure ? ` à ${heureFr(p.heure)}` : ''}` },
+    { cle: 'plateformes', label: 'Réseaux', valeur: (p) => listeFr(p.plateformes), html: (p) => `<span class="nets">${p.plateformes.map(badgeReseau).join('')}</span>${esc(listeFr(p.plateformes))}` },
+    { cle: 'statut', label: 'Statut', valeur: (p) => STATUTS[p.statut] },
+    { cle: 'eventId', label: 'Événement lié', valeur: nomEv },
+    { cle: 'description', label: 'Description (légende du post)', texte: (p) => p.description },
+    { cle: 'hashtags', label: 'Hashtags', texte: (p) => p.hashtags },
+    { cle: 'imageIdee', label: 'Idée d’image', texte: (p) => p.imageIdee },
+    { cle: 'images', label: 'Images', valeur: resumeImages, images: true },
+    { cle: 'atelier', label: 'Atelier ou thème', texte: (p) => p.atelier },
+    { cle: 'angle', label: 'Angle du post', texte: (p) => p.angle },
+    { cle: 'vigilance', label: 'Point de vigilance', texte: (p) => p.vigilance },
+  ];
+  const copies = []; // ce que copie chaque bouton : toujours la valeur brute, jamais le surlignage
+  const cellule = (contenu, texte, nomChamp, classe = '') => {
+    if (!String(texte || '').trim()) return `<div class="cmp-cell vide${classe}">Vide</div>`;
+    copies.push(texte);
+    return `<div class="cmp-cell${classe}">${contenu}${boutonCopie(`data-action="copier-cmp" data-i="${copies.length - 1}"`, nomChamp)}</div>`;
+  };
+  let lignes = '';
+  let nbDiff = 0;
+  for (const c of CHAMPS) {
+    const valeurs = posts.map((p) => (c.texte ? c.texte(p) : c.valeur(p)) || '');
+    if (valeurs.every((v) => !v.trim())) continue; // champ vide partout : rien à comparer
+    const different = valeurs.some((v) => v !== valeurs[0]);
+    if (different) nbDiff++;
+    const marques = c.texte && surlignage && different ? differencesHtml(valeurs) : null;
+    lignes += `<div class="cmp-label">${esc(c.label)}${different ? '' : ' <small class="hint">(identique)</small>'}</div>`;
+    lignes += posts.map((p, k) => {
+      const v = valeurs[k];
+      const nomChamp = `${c.label.toLowerCase()} du post ${k + 1}`;
+      if (c.images) {
+        const vignettes = Object.keys(SLOTS).flatMap((s) => listePhotos(p, s).slice(0, 4).map((f, x) => `<img class="mg-img" data-photo="${esc(p.id)}" data-slot="${s}" data-fichier="${esc(f.fichier)}" alt="Image ${x + 1} ${esc(SLOTS[s].titre)} du post ${k + 1}">`));
+        if (!v) return '<div class="cmp-cell vide">Aucune image</div>';
+        return `<div class="cmp-cell${surlignage && different ? ' diff-tout' : ''}">${esc(v)}<span class="mg-imgs">${vignettes.join('')}</span></div>`;
+      }
+      const contenu = marques ? marques[k] : c.html ? c.html(p) : escBr(v);
+      return cellule(contenu, v, nomChamp, c.valeur && surlignage && different ? ' diff-tout' : '');
+    }).join('');
+  }
+  const tetes = posts.map((p, k) => `<div class="cmp-tete"><span class="hint">Post ${k + 1}${k === 0 ? ' (ouvert)' : ''}</span><strong>${escBr(p.titre)}</strong>
+    <small><span>${esc(dateAvecJour(p.datePublication))}</span><span class="nets">${p.plateformes.map(badgeReseau).join('')}</span><span>${esc(STATUTS[p.statut])}</span></small>
+    ${k === 0 ? '' : `<button type="button" class="btn small" data-action="cmp-ouvrir" data-id="${esc(p.id)}">Ouvrir ce post</button>`}</div>`).join('');
+  const html = `<div class="modal-form" data-comparaison="${esc(posts.map((p) => p.id).join(','))}" data-surlignage="${surlignage ? '1' : ''}">${actionHead(`Comparer ${posts.length} posts`)}
+    <div class="am-body">
+      <div class="cmp-barre">
+        <button type="button" class="btn small" data-action="cmp-surligner" aria-pressed="${surlignage}">${icon('i-spark')}${surlignage ? 'Retirer le surlignage' : 'Surligner les différences'}</button>
+        <p class="hint">${nbDiff ? `${nbDiff} champ${nbDiff > 1 ? 's' : ''} différent${nbDiff > 1 ? 's' : ''}.` : 'Ces posts sont identiques.'} ${surlignage ? '<span class="cmp-legende"><mark>Surligné</mark> = absent d’au moins un autre post.</span>' : ''} Le surlignage n’est jamais copié : un copier-coller (ou l’icône de copie) donne le texte seul.</p>
+      </div>
+      ${noteBrouillon()}
+      <div class="cmp-defile" tabindex="0" aria-label="Posts comparés côte à côte"><div class="cmp" style="--n:${posts.length}">${tetes}${lignes}</div></div>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" data-action="compare-back" data-id="${esc(posts[0].id)}" data-autres="${esc(posts.slice(1).map((p) => p.id).join(','))}">Changer les posts</button><span class="spacer"></span><button type="button" class="btn primary" data-action="close-dialog">Fermer</button></div></div>`;
+  // Déjà affichée : on remplace seulement son contenu, pour ne pas déloger la discussion avec l’agent placée dans la fenêtre.
+  const actuelle = comparaisonOuverte();
+  let dlg = $('#actionDlg');
+  if (actuelle) actuelle.outerHTML = html;
+  else dlg = ouvrirAction(html, { large: true });
+  dlg.classList.add('xl');
+  dlg._copies = copies;
+  hydratePhotos(dlg);
+}
+
+const comparaisonOuverte = () => { const dlg = $('#actionDlg'); return dlg.open ? dlg.querySelector('[data-comparaison]') : null; };
+
+function basculerSurlignage(actif) {
+  const c = comparaisonOuverte();
+  if (!c) return;
+  const ids = c.dataset.comparaison.split(',');
+  const defile = c.querySelector('.cmp-defile');
+  const pos = defile ? [defile.scrollLeft, c.querySelector('.am-body').scrollTop] : [0, 0];
+  const focus = document.activeElement && c.contains(document.activeElement) && document.activeElement.dataset.action === 'cmp-surligner';
+  openComparaison(ids, actif ?? !c.dataset.surlignage);
+  const n = comparaisonOuverte();
+  if (!n) return;
+  n.querySelector('.cmp-defile').scrollLeft = pos[0];
+  n.querySelector('.am-body').scrollTop = pos[1];
+  if (focus) n.querySelector('[data-action=cmp-surligner]').focus();
+}
+
+// Copier depuis la comparaison : le texte seul, sans le surlignage ni aucune mise en forme.
+document.addEventListener('copy', (e) => {
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !e.clipboardData) return;
+  const noeud = sel.anchorNode;
+  const el = noeud && (noeud.nodeType === 1 ? noeud : noeud.parentElement);
+  if (!el || !el.closest('.cmp')) return;
+  e.clipboardData.setData('text/plain', sel.toString());
+  e.preventDefault();
+});
+
 /* ---- glisser-déposer : un post sur un autre jour le déplace ; avec Ctrl (Option sur Mac), il est cloné ---- */
 let glisse = '';
 let jourCible = null;
@@ -2106,6 +2422,17 @@ function majDockAgent() {
 function majContexteIa() {
   const ctx = $('#iaCtx');
   const sugg = $('#iaSugg');
+  const suggestion = (libelle, texte) => `<button type="button" class="btn small" data-action="ia-suggestion" data-texte="${esc(texte)}">${esc(libelle)}</button>`;
+  const comp = comparaisonOuverte();
+  if (comp) {
+    ctx.textContent = `Comparaison de ${comp.dataset.comparaison.split(',').length} posts`;
+    ctx.hidden = false;
+    sugg.innerHTML = agentPret()
+      ? suggestion(comp.dataset.surlignage ? 'Retirer le surlignage' : 'Surligner les différences', comp.dataset.surlignage ? 'Retire le surlignage des différences.' : 'Surligne les différences entre ces posts.')
+        + suggestion('Résumer les différences', 'Résume les différences entre ces posts.')
+      : '';
+    return;
+  }
   const form = ficheOuverte();
   if (!form) {
     ctx.hidden = true;
@@ -2116,7 +2443,11 @@ function majContexteIa() {
   const nom = form.elements[estPost ? 'titre' : 'nom'].value.trim();
   ctx.textContent = `${estPost ? 'Post ouvert' : 'Événement ouvert'} : ${nom || 'nouveau, pas encore enregistré'}`;
   ctx.hidden = false;
-  sugg.innerHTML = estPost && agentPret() ? `<button type="button" class="btn small" data-action="ia-suggestion" data-texte="Corrige les fautes d’orthographe et de grammaire de ce post.">Corriger les fautes</button>` : '';
+  sugg.innerHTML = estPost && agentPret()
+    ? suggestion('Corriger les fautes', 'Corrige les fautes d’orthographe et de grammaire de ce post.')
+      + suggestion('Adapter Insta/Facebook', 'Adapte la légende de ce post pour Instagram et Facebook.')
+      + suggestion('Adapter LinkedIn', 'Adapte la légende de ce post pour LinkedIn.')
+    : '';
 }
 
 function basculerChat(ouvrir = !chat.ouvert) {
@@ -2204,6 +2535,8 @@ function contexteAgent() {
     for (const k of new Set(fd.keys())) valeurs[k] = k === 'plateformes' ? fd.getAll(k) : fd.get(k);
     c.ouvert = { type: form.dataset.form === 'post' ? 'post' : 'evenement', id: form.dataset.id || null, valeurs };
   }
+  const comp = comparaisonOuverte();
+  if (comp) c.comparaison = { ids: comp.dataset.comparaison.split(','), surlignage: Boolean(comp.dataset.surlignage) };
   return c;
 }
 
@@ -2230,6 +2563,8 @@ async function envoyerAgent(texte) {
       }
     }
     if (r.actions.length) await resynchroniser();
+    if (typeof r.surlignage === 'boolean') basculerSurlignage(r.surlignage);
+    else if (r.actions.length && comparaisonOuverte()) basculerSurlignage(Boolean(comparaisonOuverte().dataset.surlignage)); // affiche les posts modifiés
   } catch (err) {
     chat.messages.push({ role: 'erreur', texte: err.message || 'Une erreur est survenue.' });
   } finally {
@@ -2502,6 +2837,27 @@ document.addEventListener('click', (e) => {
     case 'clone-post': openCloner(d.id); break;
     case 'merge-post': openFusion(d.id); break;
     case 'merge-back': openFusion(d.id, d.autre); break;
+    case 'compare-post': openComparerChoix(d.id); break;
+    case 'compare-back': openComparerChoix(d.id, d.autres ? d.autres.split(',') : []); break;
+    case 'cmp-surligner': basculerSurlignage(); break;
+    case 'cmp-ouvrir': {
+      closeDialog($('#actionDlg'));
+      const dlg = $('#drawer');
+      if (dlg.open) closeDialog(dlg);
+      if (dlg.open) break; // l'utilisateur a choisi de garder ses modifications
+      openPost(d.id);
+      break;
+    }
+    case 'copier-champ': {
+      const champ = t.closest('form').elements[d.champ];
+      copierChamp(t, champ ? champ.value : '', t.getAttribute('aria-label').replace(/^Copier /, ''));
+      break;
+    }
+    case 'copier-cmp': {
+      const dlg = t.closest('dialog');
+      copierChamp(t, dlg && dlg._copies ? dlg._copies[Number(d.i)] : '', t.getAttribute('aria-label').replace(/^Copier /, ''));
+      break;
+    }
     case 'clone-add-date': {
       const rows = $('#cloneDates');
       rows.insertAdjacentHTML('beforeend', ligneDate());
