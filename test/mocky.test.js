@@ -297,11 +297,16 @@ test('réglages : formats, rédacteur et consignes', async () => {
   assert.deepEqual(r.formats, { meta: 'social-square', linkedin: '' });
   assert.equal(r.consignes, 'Fond clair.');
   assert.equal(r.redacteur, 'mocky', 'Mocky écrit par défaut');
+  assert.equal((await api('PUT', '/api/mocky/reglages', { consignesModeles: { 'pas bon': 'x' } })).status, 400);
+  assert.equal((await api('PUT', '/api/mocky/reglages', { consignesModeles: { tcuisine: 'x'.repeat(3001) } })).status, 400);
+  // Une consigne vide retire la ligne.
+  assert.deepEqual((await api('PUT', '/api/mocky/reglages', { consignesModeles: { tcuisine: ' Logo en bas. ', trose: '  ' } })).json.consignesModeles, { tcuisine: 'Logo en bas.' });
 });
 
 test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige une erreur de rendu, et envoie le code à Mocky', async () => {
   await api('PUT', '/api/agent/reglages', { cles: { anthropic: 'sk-ant-test' }, modeles: { anthropic: 'claude-test' } });
-  await api('PUT', '/api/mocky/reglages', { redacteur: 'calendy', formats: { meta: 'social-square' }, consignes: 'Fond blanc lumineux, une seule photo.' });
+  // Le post n'a ni événement ni thème : il prend le modèle par défaut (tdefaut), qui a ses propres consignes.
+  await api('PUT', '/api/mocky/reglages', { redacteur: 'calendy', formats: { meta: 'social-square' }, consignes: 'Fond blanc lumineux, une seule photo.', consignesModeles: { tdefaut: 'Pastilles toutes de la même largeur.', tautre: 'Ne pas utiliser.' } });
   const p = (await api('POST', '/api/posts', { titre: 'Coffrets', datePublication: '2030-12-01', plateformes: ['Instagram'] })).json;
   appels.length = 0;
   requetesIa.length = 0;
@@ -311,13 +316,16 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
   const creation = appels.find((a) => a.name === 'create_design').args;
   assert.equal(creation.engine, 'client');
   assert.equal(creation.page_format, 'social-square');
-  assert.equal(creation.style, 'Fond blanc lumineux, une seule photo.');
+  assert.equal(creation.style, 'Pour ce modèle :\nPastilles toutes de la même largeur.\n\nPour tous les visuels :\nFond blanc lumineux, une seule photo.');
 
   // Le modèle de l'agent a reçu les règles de Mocky (avec le code du modèle), les consignes et la consigne de copie.
   const [premier, second] = requetesIa.filter((x) => !/VÉRIFICATION VISUELLE/.test(x.system));
   assert.match(premier.system, /REGLES-DE-MOCKY/);
   assert.match(premier.system, /LAYOUT MODEL — code du modèle/);
   assert.match(premier.system, /Fond blanc lumineux/);
+  // Les consignes du modèle utilisé passent avant les générales ; celles d'un autre modèle, jamais.
+  assert.match(premier.system, /Pour ce modèle :\nPastilles toutes de la même largeur\.[\s\S]*Pour tous les visuels :\nFond blanc lumineux/);
+  assert.doesNotMatch(premier.system, /Ne pas utiliser/);
   assert.match(premier.system, /PARS DE CE CODE/);
   assert.match(premier.system, /tient sur UNE ligne/);
   assert.deepEqual(premier.messages, [{ role: 'user', content: 'DEMANDE-DU-POST' }]);
@@ -333,6 +341,7 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
   const images = verifications[0].messages[0].content.filter((b) => b.type === 'image').map((b) => Buffer.from(b.source.data, 'base64').toString());
   assert.deepEqual(images, ['capture-modele-carre', 'capture-visuel']);
   assert.match(verifications[0].system, /Fond blanc lumineux/);
+  assert.match(verifications[0].system, /Pastilles toutes de la même largeur/);
   assert.deepEqual(verifications[1].messages[0].content.filter((b) => b.type === 'image').map((b) => Buffer.from(b.source.data, 'base64').toString()), ['capture-modele-carre', 'capture-corrigee']);
   const corrections = appels.filter((a) => a.name === 'edit_design');
   assert.equal(corrections.length, 1);
@@ -341,7 +350,7 @@ test('l’agent IA de Calendy écrit le visuel : il recopie le modèle, corrige 
   const post = (await api('GET', `/api/posts/${p.id}`)).json;
   assert.equal(post.mocky.projet, 'p-client');
   assert.equal(post.photos.meta.length, 1);
-  await api('PUT', '/api/mocky/reglages', { redacteur: 'mocky', formats: { meta: '' }, consignes: '' });
+  await api('PUT', '/api/mocky/reglages', { redacteur: 'mocky', formats: { meta: '' }, consignes: '', consignesModeles: {} });
 });
 
 test('un refus de Mocky est rapporté dans la tâche', async () => {

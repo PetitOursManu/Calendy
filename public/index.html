@@ -421,9 +421,37 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 .mk-etat.cours{color:var(--denim-ink);animation:ia-pulse 1.2s ease-in-out infinite}
 .mk-etat.ko{color:var(--refuse)}
 .mk-regles{display:grid;gap:8px}
+.mk-regles:empty{display:none}
+.reglages-mocky{max-width:760px;gap:0}
+.reglages-mocky>.hint:first-child{margin-bottom:6px}
+.regl-section{display:grid;gap:16px;padding:22px 0;border-top:1px solid var(--line)}
+.regl-section:first-of-type{border-top:0;padding-top:12px}
+.regl-section h3{font-size:18px}
+.regl-section fieldset{gap:10px}
+.deux-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.cartes-choix{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.carte-choix{position:relative;display:block}
+.carte-choix input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.carte-corps{display:grid;gap:4px;height:100%;padding:12px 14px;border:1.5px solid var(--line-strong);border-radius:var(--r-m);background:var(--surface)}
+.carte-corps small{color:var(--mute);font-size:13.5px;line-height:1.4}
+.carte-choix input:checked+.carte-corps{border-color:var(--denim);background:var(--denim-pale);box-shadow:0 0 0 1px var(--denim)}
+.carte-choix input:focus-visible+.carte-corps{outline:3px solid var(--denim);outline-offset:2px}
+.mk-aide summary,.mk-consigne summary{cursor:pointer;font-weight:700;font-size:14px;color:var(--denim-ink)}
+.mk-aide p{margin-top:8px}
+.mk-consignes{display:grid;gap:8px}
+.mk-consigne{border:1.5px solid var(--line);border-radius:var(--r-s);padding:9px 12px;background:var(--surface)}
+.mk-consigne summary{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--ink)}
+.mk-consigne[open] summary{margin-bottom:8px}
+.mk-consigne .hint{font-weight:400}
+.f>span.hint{font-weight:400;font-size:13.5px}
+.pastille-ok{font-size:12.5px;font-weight:700;color:var(--valide);background:var(--valide-bg);border-radius:999px;padding:2px 9px}
+.barre-enregistrer{position:sticky;bottom:0;z-index:2;padding:14px 0 4px;margin-top:4px;background:var(--surface);border-top:1px solid var(--line)}
+@media (max-width:640px){.deux-col,.cartes-choix{grid-template-columns:1fr}}
 .mk-regle{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:center}
 .mk-regle-ev{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;align-items:center;font-size:14.5px}
-@media (max-width:560px){.mk-regle,.mk-regle-ev{grid-template-columns:1fr}.mk-modif{flex-direction:column;align-items:stretch}}
+@media (max-width:560px){.mk-regle-ev{grid-template-columns:1fr}.mk-modif{flex-direction:column;align-items:stretch}
+  /* Une règle sur téléphone : le thème ou l'événement et la croix sur une ligne, le modèle dessous. */
+  .mk-regle{grid-template-columns:1fr auto}.mk-regle>:nth-child(2){grid-column:1/-1;grid-row:2}.mk-regle>:nth-child(3){grid-column:2;grid-row:1}}
 
 /* ---------- copier un champ ---------- */
 .f-copie{position:relative}
@@ -1651,6 +1679,7 @@ function mockySlotHtml(p, slot, nets, occupe) {
     ? `<div class="mk-ligne">
         <a class="btn small" href="${esc(v.lien || p.mocky.lien)}" target="_blank" rel="noopener">Ouvrir dans Mocky</a>
         <button type="button" class="btn small" data-action="mocky-canva" data-id="${esc(p.id)}" data-slot="${slot}">${icon('i-down')}Télécharger pour Canva (.pptx)</button>
+        <button type="button" class="btn small" data-action="mocky-refaire" data-id="${esc(p.id)}" data-slot="${slot}"${bloque} title="Fait un nouveau visuel dans le projet Mocky du post, avec le même modèle, et remplace l’image Mocky du post">${icon('i-spark')}Refaire le visuel</button>
         <button type="button" class="btn small" data-action="mocky-reprendre" data-id="${esc(p.id)}" data-slot="${slot}"${bloque} title="Récupère la dernière version de Mocky (PNG et fichier Canva) et remplace l’image Mocky du post">${icon('i-down')}Mettre à jour l’image du post</button>
       </div>
       <div class="mk-modif"><label class="f" style="flex:1"><span class="hint">Demander une modification à Mocky</span><textarea data-mk-instruction="${slot}" rows="2" maxlength="4000" placeholder="Mets le titre plus gros, change la photo…"></textarea></label>
@@ -2881,43 +2910,71 @@ function afficherReglagesMocky(main, entete) {
   if (!m) { main.innerHTML = `${entete}<p class="loading">Chargement des réglages…</p>`; return; }
   const urlEnv = m.urlSource === 'env';
   const cleEnv = m.cle.source === 'env';
+  const carte = (valeur, titre, texte) => `<label class="carte-choix"><input type="radio" name="redacteur" value="${valeur}"${(m.redacteur === 'calendy' ? 'calendy' : 'mocky') === valeur ? ' checked' : ''}><span class="carte-corps"><strong>${titre}</strong><small>${texte}</small></span></label>`;
   main.innerHTML = `${entete}
-    <form class="reglages" id="reglagesMocky" data-reglages="mocky" novalidate>
-      <p class="hint">Calendy demande à Mocky le visuel d’un post : un nouveau projet par post, à partir d’un modèle de projet Mocky. Le PNG rejoint les images du post, le fichier Canva (.pptx) se télécharge depuis la fiche.</p>
-      <div class="f"><label class="f"><span>Adresse de Mocky</span><input type="text" name="url" maxlength="300" spellcheck="false" placeholder="https://mocky.exemple.fr" value="${esc(m.url || '')}"${urlEnv ? ' disabled' : ''}></label>
-        <p class="hint">${urlEnv ? 'Fixée par la variable MOCKY_URL du serveur.' : 'L’adresse où tu ouvres Mocky (sans /mcp). Si Calendy et Mocky tournent sur la même machine (Docker, Coolify) et que la connexion échoue, mets l’adresse interne de Mocky, par exemple http://mocky:8787 : les liens « Ouvrir dans Mocky » garderont l’adresse publique. L’administrateur de Mocky doit avoir activé les assistants (Admin → Assistants (MCP)) et les clés d’assistant.'}</p></div>
-      <div class="f"><label class="f"><span>Clé d’assistant Mocky</span><input type="password" name="cle" autocomplete="off" spellcheck="false" placeholder="${cleEnv ? '' : m.cle.definie ? '•••••••• (laisser vide pour conserver)' : 'mocky_ak_…'}"${cleEnv ? ' disabled' : ''}></label>
-        <p class="hint">${cleEnv ? 'La clé vient de la variable MOCKY_API_KEY du serveur.' : 'Dans Mocky : Réglages → Assistants connectés → Clés d’assistant, niveau « Lecture + écriture ». Elle reste sur le serveur de Calendy et n’est jamais renvoyée au navigateur.'}</p>
-        <div><button type="button" class="btn small" data-action="mk-retirer-cle"${m.cle.source === 'reglages' ? '' : ' hidden'}>Retirer la clé enregistrée</button></div></div>
-      <div class="boutons"><button type="button" class="btn" data-action="mk-tester">Tester la connexion</button></div>
-      <fieldset><legend>Écriture du visuel</legend>
-        <label class="radio"><input type="radio" name="redacteur" value="mocky"${m.redacteur !== 'calendy' ? ' checked' : ''}><span>Mocky <span class="hint">— son propre modèle d’IA dessine le visuel en s’inspirant du modèle de projet.</span></span></label>
-        <label class="radio"><input type="radio" name="redacteur" value="calendy"${m.redacteur === 'calendy' ? ' checked' : ''}><span>L’agent IA de Calendy <span class="hint">— recopie le modèle, ne change que le contenu.</span></span></label>
-        <p class="hint">« L’agent IA de Calendy » est le plus fidèle au modèle. Il utilise la clé de l’agent IA (Réglages → Agent IA), et demande dans Mocky : Admin → Assistants (MCP) → « Qui écrit le code » sur « au choix » ou « le modèle de l’assistant ».</p>
-      </fieldset>
-      <fieldset><legend>Formats</legend>
-        <div class="mk-regle-ev"><span>Instagram + Facebook</span><select name="formatMeta">${optionsFormat(m.formats.meta, 'Celui de Mocky (portrait 4:5)')}</select></div>
-        <div class="mk-regle-ev"><span>LinkedIn</span><select name="formatLinkedin">${optionsFormat(m.formats.linkedin, 'Celui de Mocky (paysage 1,91:1)')}</select></div>
-        <p class="hint">Choisis le même format que tes modèles de projet : un modèle carré adapté en 4:5 perd sa mise en page.</p>
-      </fieldset>
-      <label class="f"><span>Consignes visuelles <em>facultatif</em></span><textarea name="consignes" rows="6" maxlength="3000" placeholder="Fond clair, une seule photo en rapport avec le sujet, couleur principale en petit accent, mentions obligatoires…">${esc(m.consignes || '')}</textarea>
-        <span class="hint">Tes règles de mise en forme, données à chaque visuel. Avec l’agent IA de Calendy, elles sont lues en entier ; avec Mocky, seuls les 300 premiers caractères sont transmis.</span></label>
-      <fieldset><legend>Modèle par défaut</legend>
-        <select name="modeleDefaut" data-mk-liste data-valeur="${esc(m.modeleDefaut)}"></select>
-        <p class="hint">Utilisé quand ni l’événement ni le thème du post n’ont de modèle. « Sans modèle » : Mocky invente un style à chaque post.</p></fieldset>
-      <fieldset><legend>Modèle par événement</legend>
-        <p class="hint">Prioritaire : un post lié à cet événement prend ce modèle.</p>
-        <div class="mk-regles">${state.evenements.length ? [...state.evenements].sort((x, y) => x.dateDebut.localeCompare(y.dateDebut)).map((ev) => `<label class="mk-regle-ev"><span>${esc(ev.nom)} <span class="hint">${esc(periode(ev.dateDebut, ev.dateFin))}</span></span><select data-mk-ev="${esc(ev.id)}" data-mk-liste data-valeur="${esc(m.evenements[ev.id] || '')}"></select></label>`).join('') : '<p class="hint">Aucun événement pour le moment.</p>'}</div></fieldset>
-      <fieldset><legend>Modèle par thème</legend>
-        <p class="hint">Le thème est le champ « Atelier ou thème » du post (majuscules et accents ignorés).</p>
-        <div class="mk-regles" id="mkThemes"></div>
-        <div><button type="button" class="btn small" data-action="mk-ajouter-theme">${icon('i-plus')}Ajouter une règle</button></div>
-        <datalist id="mkThemesConnus">${[...new Set(state.posts.map((p) => p.atelier).filter(Boolean))].sort().map((t) => `<option value="${esc(t)}">`).join('')}</datalist></fieldset>
-      <div class="boutons"><button type="submit" class="btn primary">Enregistrer</button><span class="etat" id="reglEtat" role="status"></span></div>
+    <form class="reglages reglages-mocky" id="reglagesMocky" data-reglages="mocky" novalidate>
+      <p class="hint">Calendy demande à Mocky le visuel d’un post : un projet Mocky par post, à partir d’un modèle. Le PNG rejoint les images du post ; le fichier Canva (.pptx) se télécharge depuis la fiche.</p>
+
+      <section class="regl-section" aria-labelledby="mkTitreConnexion">
+        <h3 id="mkTitreConnexion">Connexion</h3>
+        <div class="deux-col">
+          <label class="f"><span>Adresse de Mocky</span><input type="text" name="url" maxlength="300" spellcheck="false" placeholder="https://mocky.exemple.fr" value="${esc(m.url || '')}"${urlEnv ? ' disabled' : ''}>
+            <span class="hint">${urlEnv ? 'Fixée par la variable MOCKY_URL.' : 'Celle où tu ouvres Mocky, sans /mcp.'}</span></label>
+          <label class="f"><span>Clé d’assistant</span><input type="password" name="cle" autocomplete="off" spellcheck="false" placeholder="${cleEnv ? '' : m.cle.definie ? '•••••••• (enregistrée)' : 'mocky_ak_…'}"${cleEnv ? ' disabled' : ''}>
+            <span class="hint">${cleEnv ? 'Fixée par la variable MOCKY_API_KEY.' : 'Niveau « Lecture + écriture ». Jamais renvoyée au navigateur.'}</span></label>
+        </div>
+        <div class="boutons"><button type="button" class="btn small" data-action="mk-tester">Tester la connexion</button><button type="button" class="btn small" data-action="mk-retirer-cle"${m.cle.source === 'reglages' ? '' : ' hidden'}>Retirer la clé</button></div>
+        <details class="mk-aide"><summary>Où trouver la clé, et si la connexion échoue</summary>
+          <p class="hint">Dans Mocky : Réglages → Assistants connectés → Clés d’assistant. L’administrateur de Mocky doit avoir activé les assistants et les clés (Admin → Assistants (MCP)). Si Calendy et Mocky tournent sur la même machine et que le test échoue, mets l’adresse interne de Mocky (par exemple http://mocky:8787) : les liens « Ouvrir dans Mocky » garderont l’adresse publique.</p></details>
+      </section>
+
+      <section class="regl-section" aria-labelledby="mkTitreCreation">
+        <h3 id="mkTitreCreation">Création des visuels</h3>
+        <fieldset><legend>Qui écrit le visuel</legend>
+          <div class="cartes-choix">
+            ${carte('mocky', 'Mocky', 'Son modèle d’IA dessine le visuel en s’inspirant du modèle.')}
+            ${carte('calendy', 'L’agent IA de Calendy', 'Recopie le modèle et ne change que le contenu, puis vérifie la capture. Le plus fidèle.')}
+          </div>
+          <p class="hint" id="mkPrerequis"${m.redacteur === 'calendy' ? '' : ' hidden'}>Utilise la clé de l’agent IA (onglet Agent IA). Dans Mocky : Admin → Assistants (MCP) → « Qui écrit le code » sur « au choix » ou « le modèle de l’assistant ».</p>
+        </fieldset>
+        <fieldset><legend>Formats</legend>
+          <div class="deux-col">
+            <label class="f"><span class="hint">Instagram + Facebook</span><select name="formatMeta">${optionsFormat(m.formats.meta, 'Celui de Mocky (4:5)')}</select></label>
+            <label class="f"><span class="hint">LinkedIn</span><select name="formatLinkedin">${optionsFormat(m.formats.linkedin, 'Celui de Mocky (1,91:1)')}</select></label>
+          </div>
+          <p class="hint">Le même format que tes modèles : un modèle carré adapté en 4:5 perd sa mise en page.</p>
+        </fieldset>
+      </section>
+
+      <section class="regl-section" aria-labelledby="mkTitreModeles">
+        <h3 id="mkTitreModeles">Modèles et consignes</h3>
+        <label class="f"><span>Modèle par défaut</span><select name="modeleDefaut" data-mk-liste data-valeur="${esc(m.modeleDefaut)}"></select>
+          <span class="hint">Quand ni l’événement ni le thème du post n’ont de modèle.</span></label>
+        <label class="f"><span>Consignes pour tous les visuels <em>facultatif</em></span><textarea name="consignes" rows="4" maxlength="3000" placeholder="Fond clair, une seule photo en rapport avec le sujet, mentions obligatoires…">${esc(m.consignes || '')}</textarea></label>
+        <div class="f"><span>Consignes par modèle <em>facultatif</em></span>
+          <p class="hint">Les règles propres à un modèle (largeur des pastilles, place du logo…), lues avant les consignes générales.</p>
+          <div class="mk-consignes" id="mkConsignesModeles"><p class="hint">Chargement des modèles…</p></div></div>
+        <p class="hint">L’agent IA de Calendy lit les consignes en entier ; Mocky n’en reçoit que les 300 premiers caractères.</p>
+      </section>
+
+      <section class="regl-section" aria-labelledby="mkTitreRegles">
+        <h3 id="mkTitreRegles">Choix automatique du modèle</h3>
+        <p class="hint">Dans l’ordre : le modèle de l’événement du post, sinon celui de son thème (champ « Atelier ou thème »), sinon le modèle par défaut.</p>
+        <fieldset><legend>Par événement</legend>
+          <div class="mk-regles" id="mkEvenements"></div>
+          <div><button type="button" class="btn small" data-action="mk-ajouter-ev"${state.evenements.length ? '' : ' disabled'}>${icon('i-plus')}Ajouter un événement</button></div></fieldset>
+        <fieldset><legend>Par thème</legend>
+          <div class="mk-regles" id="mkThemes"></div>
+          <div><button type="button" class="btn small" data-action="mk-ajouter-theme">${icon('i-plus')}Ajouter un thème</button></div>
+          <datalist id="mkThemesConnus">${[...new Set(state.posts.map((p) => p.atelier).filter(Boolean))].sort().map((t) => `<option value="${esc(t)}">`).join('')}</datalist></fieldset>
+      </section>
+
+      <div class="boutons barre-enregistrer"><button type="submit" class="btn primary">Enregistrer</button><span class="etat" id="reglEtat" role="status"></span></div>
     </form>`;
   const form = main.querySelector('#reglagesMocky');
-  const themes = form.querySelector('#mkThemes');
-  (m.themes.length ? m.themes : []).forEach((t) => themes.insertAdjacentHTML('beforeend', ligneTheme(t.theme, t.modele)));
+  m.themes.forEach((t) => form.querySelector('#mkThemes').insertAdjacentHTML('beforeend', ligneTheme(t.theme, t.modele)));
+  Object.entries(m.evenements).filter(([id]) => evById(id)).forEach(([id, modele]) => form.querySelector('#mkEvenements').insertAdjacentHTML('beforeend', ligneEvenement(id, modele)));
+  form.addEventListener('change', (e) => { if (e.target.name === 'redacteur') form.querySelector('#mkPrerequis').hidden = e.target.value !== 'calendy'; });
   form.addEventListener('submit', (e) => { e.preventDefault(); enregistrerMocky(form).catch(() => {}); });
   remplirListesModeles(form);
 }
@@ -2925,7 +2982,29 @@ function afficherReglagesMocky(main, entete) {
 const FORMATS_MOCKY = { 'social-square': 'Carré 1:1 (1080 × 1080)', 'social-portrait': 'Portrait 4:5 (1080 × 1350)', 'social-story': 'Story 9:16 (1080 × 1920)', 'social-landscape': 'Paysage 1,91:1 (1200 × 628)' };
 const optionsFormat = (valeur, defaut) => `<option value="">${esc(defaut)}</option>${Object.entries(FORMATS_MOCKY).map(([id, nom]) => `<option value="${id}"${valeur === id ? ' selected' : ''}>${esc(nom)}</option>`).join('')}`;
 
-const ligneTheme = (theme = '', modele = '') => `<div class="mk-regle"><input type="text" data-mk-theme maxlength="200" list="mkThemesConnus" placeholder="Cuisine, Espaces verts…" aria-label="Thème" value="${esc(theme)}"><select data-mk-liste data-valeur="${esc(modele)}" aria-label="Modèle pour ce thème"></select><button type="button" class="icon-btn" data-action="mk-retirer-theme" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
+const ligneTheme = (theme = '', modele = '') => `<div class="mk-regle"><input type="text" data-mk-theme maxlength="200" list="mkThemesConnus" placeholder="Cuisine, Espaces verts…" aria-label="Thème" value="${esc(theme)}"><select data-mk-liste data-valeur="${esc(modele)}" aria-label="Modèle pour ce thème"></select><button type="button" class="icon-btn" data-action="mk-retirer-regle" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
+
+const ligneEvenement = (id = '', modele = '') => {
+  const evs = [...state.evenements].sort((x, y) => x.dateDebut.localeCompare(y.dateDebut));
+  const options = evs.map((ev) => `<option value="${esc(ev.id)}"${ev.id === id ? ' selected' : ''}>${esc(ev.nom)} (${esc(periode(ev.dateDebut, ev.dateFin))})</option>`).join('');
+  return `<div class="mk-regle" data-mk-ev-ligne><select data-mk-ev aria-label="Événement">${options}</select><select data-mk-liste data-valeur="${esc(modele)}" aria-label="Modèle pour cet événement"></select><button type="button" class="icon-btn" data-action="mk-retirer-regle" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
+};
+
+/** Une ligne repliable par modèle : « Cuisine — 2 écrans », et ses consignes propres. */
+function dessinerConsignesModeles(form, modeles) {
+  const zone = form.querySelector('#mkConsignesModeles');
+  if (!zone) return;
+  const saisies = Object.fromEntries([...zone.querySelectorAll('textarea[data-mk-consigne]')].map((x) => [x.dataset.mkConsigne, x.value]));
+  const valeurs = { ...(state.mocky.consignesModeles || {}), ...saisies };
+  const liste = [...modeles];
+  for (const id of Object.keys(valeurs)) if (valeurs[id] && !liste.some((x) => x.id === id)) liste.push({ id, nom: `${id} (introuvable dans Mocky)` });
+  if (!liste.length) { zone.innerHTML = `<p class="hint">${mockyPret() ? 'Aucun modèle de projet dans Mocky (sur un projet : Exporter → Enregistrer comme modèle).' : 'Renseigne la connexion pour voir tes modèles.'}</p>`; return; }
+  zone.innerHTML = liste.map((x) => {
+    const v = valeurs[x.id] || '';
+    return `<details class="mk-consigne"${v ? ' open' : ''}><summary><span>${esc(x.nom)}</span>${v ? '<span class="pastille-ok">consignes</span>' : '<span class="hint">aucune consigne</span>'}</summary>
+      <textarea data-mk-consigne="${esc(x.id)}" rows="3" maxlength="3000" aria-label="Consignes pour le modèle ${esc(x.nom)}" placeholder="Ex. : les trois pastilles ont la même largeur, texte sur une ligne…">${esc(v)}</textarea></details>`;
+  }).join('');
+}
 
 async function remplirListesModeles(form, { frais = false } = {}) {
   const selects = [...form.querySelectorAll('select[data-mk-liste]')];
@@ -2938,6 +3017,7 @@ async function remplirListesModeles(form, { frais = false } = {}) {
     sel.innerHTML = `<option value="">${sel.name === 'modeleDefaut' ? 'Sans modèle' : '—'}</option>${modeles.map((x) => `<option value="${esc(x.id)}">${esc(x.nom)}</option>`).join('')}${valeur && !connus ? `<option value="${esc(valeur)}">${esc(valeur)} (introuvable dans Mocky)</option>` : ''}`;
     sel.value = valeur;
   }
+  dessinerConsignesModeles(form, modeles);
   if (!mockyPret()) etatReglages(form, 'Renseigne l’adresse et la clé, puis enregistre pour voir les modèles.', false);
   else if (erreur) etatReglages(form, erreur, false);
 }
@@ -2948,9 +3028,10 @@ async function enregistrerMocky(form) {
     redacteur: el.redacteur.value || 'mocky',
     formats: { meta: el.formatMeta.value, linkedin: el.formatLinkedin.value },
     consignes: el.consignes.value,
+    consignesModeles: Object.fromEntries([...form.querySelectorAll('textarea[data-mk-consigne]')].map((x) => [x.dataset.mkConsigne, x.value])),
     modeleDefaut: el.modeleDefaut.value,
-    evenements: Object.fromEntries([...form.querySelectorAll('select[data-mk-ev]')].filter((s) => s.value).map((s) => [s.dataset.mkEv, s.value])),
-    themes: [...form.querySelectorAll('.mk-regle')].map((r) => ({ theme: r.querySelector('[data-mk-theme]').value.trim(), modele: r.querySelector('select').value })).filter((r) => r.theme && r.modele),
+    evenements: Object.fromEntries([...form.querySelectorAll('[data-mk-ev-ligne]')].map((r) => [r.querySelector('[data-mk-ev]').value, r.querySelector('select[data-mk-liste]').value]).filter(([id, modele]) => id && modele)),
+    themes: [...form.querySelectorAll('#mkThemes .mk-regle')].map((r) => ({ theme: r.querySelector('[data-mk-theme]').value.trim(), modele: r.querySelector('select').value })).filter((r) => r.theme && r.modele),
   };
   if (!el.url.disabled) corps.url = el.url.value.trim();
   if (!el.cle.disabled && el.cle.value.trim()) corps.cle = el.cle.value.trim();
@@ -2962,6 +3043,7 @@ async function enregistrerMocky(form) {
     throw err;
   }
   el.cle.value = '';
+  el.cle.placeholder = state.mocky.cle.source === 'env' ? '' : state.mocky.cle.definie ? '•••••••• (enregistrée)' : 'mocky_ak_…';
   form.querySelector('[data-action=mk-retirer-cle]').hidden = state.mocky.cle.source !== 'reglages';
   etatReglages(form, 'Réglages enregistrés.', true);
   if (!etaitPret && mockyPret()) remplirListesModeles(form, { frais: true });
@@ -3213,7 +3295,18 @@ document.addEventListener('click', (e) => {
       form.querySelector('#mkThemes').lastElementChild.querySelector('input').focus();
       break;
     }
-    case 'mk-retirer-theme': t.closest('.mk-regle').remove(); break;
+    case 'mk-retirer-regle': t.closest('.mk-regle').remove(); break;
+    case 'mk-ajouter-ev': {
+      const form = t.closest('form');
+      form.querySelector('#mkEvenements').insertAdjacentHTML('beforeend', ligneEvenement());
+      remplirListesModeles(form);
+      form.querySelector('#mkEvenements').lastElementChild.querySelector('select').focus();
+      break;
+    }
+    case 'mocky-refaire':
+      if (!window.confirm('Refaire ce visuel avec Mocky ? L’image Mocky actuelle du post sera remplacée (Annuler reste possible).')) break;
+      guard(() => lancerMocky(t, 'creer'));
+      break;
     case 'mk-retirer-cle': {
       const form = t.closest('form');
       guard(async () => { state.mocky = await api('PUT', '/api/mocky/reglages', { cle: null }); t.hidden = true; etatReglages(form, 'Clé retirée.', true); });
