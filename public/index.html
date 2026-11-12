@@ -422,6 +422,24 @@ dialog.modal.large{width:min(780px,calc(100vw - 28px))}
 .mk-etat.ko{color:var(--refuse)}
 .mk-regles{display:grid;gap:8px}
 .mk-regles:empty{display:none}
+.mk-regle{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;align-items:start}
+.choix-modele{display:grid;gap:6px;min-width:0}
+.bascule{display:inline-flex;justify-self:start;gap:2px;padding:2px;border:1.5px solid var(--line-strong);border-radius:999px;background:var(--surface)}
+.bascule button{border:0;background:none;padding:4px 12px;border-radius:999px;font:inherit;font-weight:700;font-size:13px;color:var(--mute);cursor:pointer}
+.bascule button[aria-pressed=true]{background:var(--denim);color:#fff}
+.bascule button:focus-visible{outline:3px solid var(--denim);outline-offset:1px}
+.choix-modele[data-mode=exact] .si-inspiration,.choix-modele[data-mode=inspiration] .si-exact{display:none}
+.mk-multi{position:relative}
+.mk-multi summary{list-style:none;display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 12px;border:1.5px solid var(--champ);border-radius:var(--r-s);background:var(--surface);font-size:14.5px;cursor:pointer}
+.mk-multi summary::-webkit-details-marker{display:none}
+.mk-multi summary::after{content:'▾';color:var(--mute);flex:none}
+.mk-multi summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mk-multi-liste{position:absolute;z-index:30;left:0;right:0;top:calc(100% + 4px);display:grid;gap:2px;max-height:240px;overflow:auto;padding:6px;background:var(--surface);border:1.5px solid var(--line-strong);border-radius:var(--r-s);box-shadow:var(--ombre-2)}
+.mk-multi-liste label{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:14.5px;cursor:pointer}
+.mk-multi-liste label:hover{background:var(--soft)}
+.mk-multi-liste input:disabled+span{opacity:.5}
+.mk-choix{display:grid;gap:4px}
+@media (max-width:560px){.mk-regle{grid-template-columns:1fr auto}}
 .reglages-mocky{max-width:760px;gap:0}
 .reglages-mocky>.hint:first-child{margin-bottom:6px}
 .regl-section{display:grid;gap:16px;padding:22px 0;border-top:1px solid var(--line)}
@@ -1618,6 +1636,60 @@ function openPost(id, defaults = {}) {
   dessinerMocky(form);
 }
 
+/* ================= choix d'un modèle : exact ou inspiration ================= */
+/** Un choix enregistré tel qu'il arrive du serveur : un identifiant seul (modèle exact) ou { mode, exemples }. */
+const normChoix = (v) => (v && typeof v === 'object' ? { mode: v.mode === 'inspiration' ? 'inspiration' : 'exact', modele: v.modele || '', exemples: Array.isArray(v.exemples) ? v.exemples : [] } : { mode: 'exact', modele: v || '', exemples: [] });
+const EXEMPLES_MAX = 4;
+
+/**
+ * Le bouton « Modèle exact / Inspiration », puis selon le mode : la liste des modèles (un seul, recopié fidèlement),
+ * ou un menu déroulant à cases à cocher (jusqu'à quatre exemples dont Calendy s'inspire sans en copier un).
+ */
+function choixModeleHtml(choix, { vide = '—', etiquette = 'Modèle' } = {}) {
+  const c = normChoix(choix);
+  const bouton = (mode, texte) => `<button type="button" data-action="mk-mode" data-mode="${mode}" aria-pressed="${c.mode === mode}">${texte}</button>`;
+  return `<div class="choix-modele" data-choix data-mode="${c.mode}">
+    <div class="bascule" role="group" aria-label="${esc(etiquette)} : façon d’utiliser les modèles">${bouton('exact', 'Modèle exact')}${bouton('inspiration', 'Inspiration')}</div>
+    <select class="si-exact" data-mk-liste data-vide="${esc(vide)}" data-valeur="${esc(c.modele)}" aria-label="${esc(etiquette)} : modèle exact"></select>
+    <details class="mk-multi si-inspiration" data-mk-exemples data-valeurs="${esc(JSON.stringify(c.exemples))}"><summary aria-label="${esc(etiquette)} : exemples"><span data-mk-resume>Choisir des exemples</span></summary><div class="mk-multi-liste" role="group"></div></details>
+  </div>`;
+}
+
+function lireChoix(div) {
+  if (!div) return null;
+  const mode = div.dataset.mode === 'inspiration' ? 'inspiration' : 'exact';
+  if (mode === 'exact') return { mode, modele: div.querySelector('select[data-mk-liste]').value, exemples: [] };
+  return { mode, modele: '', exemples: [...div.querySelectorAll('[data-mk-exemples] input:checked')].map((i) => i.value) };
+}
+
+function resumeExemples(details) {
+  const coches = [...details.querySelectorAll('input:checked')];
+  details.querySelector('[data-mk-resume]').textContent = coches.length
+    ? `${coches.length} exemple${coches.length > 1 ? 's' : ''} : ${coches.map((i) => i.dataset.nom).join(', ')}`
+    : 'Choisir des exemples';
+  // Quatre au plus : les autres cases se grisent.
+  details.querySelectorAll('input').forEach((i) => { i.disabled = !i.checked && coches.length >= EXEMPLES_MAX; });
+}
+
+/** Remplit les listes de modèles et les menus d'exemples d'une zone, en gardant ce qui y était choisi. */
+function remplirModeles(root, modeles) {
+  for (const sel of root.querySelectorAll('select[data-mk-liste]')) {
+    const valeur = sel.value || sel.dataset.valeur || '';
+    const connus = modeles.some((x) => x.id === valeur);
+    sel.innerHTML = `<option value="">${esc(sel.dataset.vide || (sel.name === 'modeleDefaut' ? 'Sans modèle' : '—'))}</option>${modeles.map((x) => `<option value="${esc(x.id)}">${esc(x.nom)}</option>`).join('')}${valeur && !connus ? `<option value="${esc(valeur)}">${esc(valeur)} (introuvable dans Mocky)</option>` : ''}`;
+    sel.value = valeur;
+  }
+  for (const d of root.querySelectorAll('[data-mk-exemples]')) {
+    const deja = d.querySelector('input') ? [...d.querySelectorAll('input:checked')].map((i) => i.value) : JSON.parse(d.dataset.valeurs || '[]');
+    const liste = [...modeles];
+    for (const id of deja) if (!liste.some((x) => x.id === id)) liste.push({ id, nom: `${id} (introuvable)` });
+    d.querySelector('.mk-multi-liste').innerHTML = liste.length
+      ? liste.map((x) => `<label><input type="checkbox" value="${esc(x.id)}" data-nom="${esc(x.nom)}"${deja.includes(x.id) ? ' checked' : ''}><span>${esc(x.nom)}</span></label>`).join('')
+      : '<p class="hint">Aucun modèle dans Mocky.</p>';
+    resumeExemples(d);
+  }
+}
+
 /* ================= visuels Mocky ================= */
 const mockyPret = () => Boolean(state.mocky && state.mocky.pret);
 const tacheMocky = (postId, slot) => state.mockyTaches.find((t) => t.postId === postId && t.visuel === slot);
@@ -1649,7 +1721,9 @@ function dessinerMocky(form) {
   const occupe = state.mockyTaches.some((t) => t.etat === 'en_cours');
   // Le bloc est redessiné pendant le suivi d'une tâche : une demande en cours de saisie ne doit pas disparaître.
   const saisies = [...corps.querySelectorAll('textarea[data-mk-instruction]')].map((x) => [x.dataset.mkInstruction, x.value, x === document.activeElement]);
-  const choix = [...corps.querySelectorAll('select[data-mk-modele]')].map((x) => [x.dataset.mkModele, x.value]);
+  // Le choix « exact / inspiration » en cours de saisie est gardé à travers les redessins (suivi d'une tâche).
+  form._mkChoix = form._mkChoix || {};
+  for (const z of corps.querySelectorAll('[data-mk-choix-slot]')) { const c = lireChoix(z.querySelector('[data-choix]')); if (c) form._mkChoix[z.dataset.mkChoixSlot] = c; }
   corps.innerHTML = `<p class="hint">Mocky crée le visuel dans un nouveau projet, à partir du modèle choisi. Le PNG rejoint les images du post et le fichier Canva (.pptx, tout en éléments séparés) se télécharge ici. ${$('#drawer')._dirty ? '<strong>Les modifications non enregistrées de la fiche ne sont pas envoyées à Mocky.</strong>' : ''}</p>
     ${Object.keys(SLOTS).map((slot) => mockySlotHtml(p, slot, nets, occupe)).join('')}`;
   for (const [slot, valeur, focus] of saisies) {
@@ -1658,12 +1732,7 @@ function dessinerMocky(form) {
     x.value = valeur;
     if (focus) x.focus();
   }
-  remplirChoixModele(form, p).then(() => {
-    for (const [slot, valeur] of choix) {
-      const x = corps.querySelector(`select[data-mk-modele=${slot}]`);
-      if (x && [...x.options].some((o) => o.value === valeur)) x.value = valeur;
-    }
-  });
+  remplirChoixModele(form, p);
 }
 
 function mockySlotHtml(p, slot, nets, occupe) {
@@ -1685,26 +1754,33 @@ function mockySlotHtml(p, slot, nets, occupe) {
       <div class="mk-modif"><label class="f" style="flex:1"><span class="hint">Demander une modification à Mocky</span><textarea data-mk-instruction="${slot}" rows="2" maxlength="4000" placeholder="Mets le titre plus gros, change la photo…"></textarea></label>
         <button type="button" class="btn small" data-action="mocky-modifier" data-id="${esc(p.id)}" data-slot="${slot}"${bloque}>Envoyer</button></div>
       <p class="hint">Fait le ${esc(dateLongue(String(v.date || '').slice(0, 10) || p.datePublication))}. Une retouche faite à la main dans Mocky ? « Mettre à jour l’image du post » récupère le PNG et le fichier Canva à jour.</p>`
-    : `<div class="mk-ligne"><select data-mk-modele="${slot}" aria-label="Modèle Mocky pour ${esc(s.titre)}"><option value="">Chargement des modèles…</option></select>
-        <button type="button" class="btn small primary" data-action="mocky-creer" data-id="${esc(p.id)}" data-slot="${slot}"${bloque}>${icon('i-spark')}Créer le visuel avec Mocky</button></div>`;
+    : `<div class="mk-choix" data-mk-choix-slot="${slot}"><p class="hint">Chargement des modèles…</p></div>
+      <div class="mk-ligne"><button type="button" class="btn small primary" data-action="mocky-creer" data-id="${esc(p.id)}" data-slot="${slot}"${bloque}>${icon('i-spark')}Créer le visuel avec Mocky</button></div>`;
   return `<div class="mk-slot" data-slot="${slot}"${visible ? '' : ' hidden'}><h4>${esc(s.titre)}</h4>${etat}${actions}</div>`;
 }
 
 /** Remplit les listes de modèles : « Automatique » annonce celui que les règles choisissent pour ce post. */
+/** Le choix de chaque réseau, prérempli par les règles ; ce que l'utilisateur y change est gardé pendant la saisie. */
 async function remplirChoixModele(form, p) {
-  const selects = [...form.querySelectorAll('select[data-mk-modele]')];
-  if (!selects.length) return;
+  const zones = [...form.querySelectorAll('[data-mk-choix-slot]')];
+  if (!zones.length) return;
   let modeles = [];
-  let auto = { modele: '', raison: 'aucun' };
+  let regle = { mode: 'exact', modele: '', exemples: [], raison: 'aucun' };
   try {
-    [modeles, auto] = await Promise.all([chargerModelesMocky(), api('GET', `/api/posts/${encodeURIComponent(p.id)}/mocky/modele`)]);
+    [modeles, regle] = await Promise.all([chargerModelesMocky(), api('GET', `/api/posts/${encodeURIComponent(p.id)}/mocky/modele`)]);
   } catch (err) {
-    selects.forEach((sel) => { sel.innerHTML = `<option value="">${esc(err.message || 'Modèles indisponibles')}</option>`; });
+    zones.forEach((z) => { z.innerHTML = `<p class="hint">${esc(err.message || 'Modèles indisponibles')}</p>`; });
     return;
   }
-  const libelleAuto = auto.modele ? `Automatique : ${nomModeleMocky(auto.modele)} (${RAISONS_MODELE[auto.raison] || 'règle'})` : 'Automatique : sans modèle (nouveau style)';
-  const options = `<option value="__auto">${esc(libelleAuto)}</option>${modeles.map((m) => `<option value="${esc(m.id)}">${esc(m.nom)}</option>`).join('')}<option value="">Sans modèle (Mocky invente le style)</option>`;
-  selects.forEach((sel) => { if (sel.isConnected) sel.innerHTML = options; });
+  form._mkChoix = form._mkChoix || {};
+  for (const z of zones) {
+    if (!z.isConnected) continue;
+    const slot = z.dataset.mkChoixSlot;
+    const choix = form._mkChoix[slot] || regle;
+    const selon = regle.raison === 'aucun' ? 'Aucune règle ne s’applique à ce post.' : `Prérempli par la règle ${regle.raison === 'evenement' ? 'de l’événement' : regle.raison === 'theme' ? 'du thème' : 'par défaut'}.`;
+    z.innerHTML = `${choixModeleHtml(choix, { vide: 'Sans modèle (Mocky invente le style)', etiquette: SLOTS[slot].titre })}<p class="hint">${selon}</p>`;
+    remplirModeles(z, modeles);
+  }
 }
 
 async function lancerMocky(t, action) {
@@ -1712,8 +1788,9 @@ async function lancerMocky(t, action) {
   const form = t.closest('form');
   const corps = { visuel: d.slot, action };
   if (action === 'creer') {
-    const sel = form.querySelector(`select[data-mk-modele=${d.slot}]`);
-    if (sel && sel.value !== '__auto') corps.modele = sel.value;
+    const choix = lireChoix(form.querySelector(`[data-mk-choix-slot=${d.slot}] [data-choix]`));
+    if (choix && choix.mode === 'inspiration' && !choix.exemples.length) { toast('Coche au moins un exemple, ou choisis « Modèle exact ».', { error: true }); return; }
+    if (choix) corps.choix = choix;
   }
   if (action === 'modifier') {
     corps.instruction = form.querySelector(`textarea[data-mk-instruction=${d.slot}]`).value.trim();
@@ -2948,8 +3025,8 @@ function afficherReglagesMocky(main, entete) {
 
       <section class="regl-section" aria-labelledby="mkTitreModeles">
         <h3 id="mkTitreModeles">Modèles et consignes</h3>
-        <label class="f"><span>Modèle par défaut</span><select name="modeleDefaut" data-mk-liste data-valeur="${esc(m.modeleDefaut)}"></select>
-          <span class="hint">Quand ni l’événement ni le thème du post n’ont de modèle.</span></label>
+        <div class="f" id="mkDefaut"><span>Par défaut</span>${choixModeleHtml({ mode: m.defautMode, modele: m.modeleDefaut, exemples: m.defautExemples }, { vide: 'Sans modèle', etiquette: 'Par défaut' })}
+          <span class="hint">Quand ni l’événement ni le thème du post n’ont de règle. « Modèle exact » : un modèle recopié fidèlement. « Inspiration » : jusqu’à ${EXEMPLES_MAX} exemples dont Calendy s’inspire, sans en copier un.</span></div>
         <label class="f"><span>Consignes pour tous les visuels <em>facultatif</em></span><textarea name="consignes" rows="4" maxlength="3000" placeholder="Fond clair, une seule photo en rapport avec le sujet, mentions obligatoires…">${esc(m.consignes || '')}</textarea></label>
         <div class="f"><span>Consignes par modèle <em>facultatif</em></span>
           <p class="hint">Les règles propres à un modèle (largeur des pastilles, place du logo…), lues avant les consignes générales.</p>
@@ -2972,7 +3049,7 @@ function afficherReglagesMocky(main, entete) {
       <div class="boutons barre-enregistrer"><button type="submit" class="btn primary">Enregistrer</button><span class="etat" id="reglEtat" role="status"></span></div>
     </form>`;
   const form = main.querySelector('#reglagesMocky');
-  m.themes.forEach((t) => form.querySelector('#mkThemes').insertAdjacentHTML('beforeend', ligneTheme(t.theme, t.modele)));
+  m.themes.forEach((t) => form.querySelector('#mkThemes').insertAdjacentHTML('beforeend', ligneTheme(t.theme, t.mode === 'inspiration' ? t : t.modele)));
   Object.entries(m.evenements).filter(([id]) => evById(id)).forEach(([id, modele]) => form.querySelector('#mkEvenements').insertAdjacentHTML('beforeend', ligneEvenement(id, modele)));
   form.addEventListener('change', (e) => { if (e.target.name === 'redacteur') form.querySelector('#mkPrerequis').hidden = e.target.value !== 'calendy'; });
   form.addEventListener('submit', (e) => { e.preventDefault(); enregistrerMocky(form).catch(() => {}); });
@@ -2982,12 +3059,12 @@ function afficherReglagesMocky(main, entete) {
 const FORMATS_MOCKY = { 'social-square': 'Carré 1:1 (1080 × 1080)', 'social-portrait': 'Portrait 4:5 (1080 × 1350)', 'social-story': 'Story 9:16 (1080 × 1920)', 'social-landscape': 'Paysage 1,91:1 (1200 × 628)' };
 const optionsFormat = (valeur, defaut) => `<option value="">${esc(defaut)}</option>${Object.entries(FORMATS_MOCKY).map(([id, nom]) => `<option value="${id}"${valeur === id ? ' selected' : ''}>${esc(nom)}</option>`).join('')}`;
 
-const ligneTheme = (theme = '', modele = '') => `<div class="mk-regle"><input type="text" data-mk-theme maxlength="200" list="mkThemesConnus" placeholder="Cuisine, Espaces verts…" aria-label="Thème" value="${esc(theme)}"><select data-mk-liste data-valeur="${esc(modele)}" aria-label="Modèle pour ce thème"></select><button type="button" class="icon-btn" data-action="mk-retirer-regle" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
+const ligneTheme = (theme = '', choix = '') => `<div class="mk-regle"><input type="text" data-mk-theme maxlength="200" list="mkThemesConnus" placeholder="Cuisine, Espaces verts…" aria-label="Thème" value="${esc(theme)}">${choixModeleHtml(choix, { etiquette: 'Thème' })}<button type="button" class="icon-btn" data-action="mk-retirer-regle" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
 
-const ligneEvenement = (id = '', modele = '') => {
+const ligneEvenement = (id = '', choix = '') => {
   const evs = [...state.evenements].sort((x, y) => x.dateDebut.localeCompare(y.dateDebut));
   const options = evs.map((ev) => `<option value="${esc(ev.id)}"${ev.id === id ? ' selected' : ''}>${esc(ev.nom)} (${esc(periode(ev.dateDebut, ev.dateFin))})</option>`).join('');
-  return `<div class="mk-regle" data-mk-ev-ligne><select data-mk-ev aria-label="Événement">${options}</select><select data-mk-liste data-valeur="${esc(modele)}" aria-label="Modèle pour cet événement"></select><button type="button" class="icon-btn" data-action="mk-retirer-regle" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
+  return `<div class="mk-regle" data-mk-ev-ligne><select data-mk-ev aria-label="Événement">${options}</select>${choixModeleHtml(choix, { etiquette: 'Événement' })}<button type="button" class="icon-btn" data-action="mk-retirer-regle" aria-label="Retirer cette règle">${icon('i-x')}</button></div>`;
 };
 
 /** Une ligne repliable par modèle : « Cuisine — 2 écrans », et ses consignes propres. */
@@ -3011,12 +3088,7 @@ async function remplirListesModeles(form, { frais = false } = {}) {
   let modeles = [];
   let erreur = '';
   try { modeles = await chargerModelesMocky({ frais }); } catch (err) { erreur = err.message; }
-  for (const sel of selects) {
-    const valeur = sel.value || sel.dataset.valeur || '';
-    const connus = modeles.some((x) => x.id === valeur);
-    sel.innerHTML = `<option value="">${sel.name === 'modeleDefaut' ? 'Sans modèle' : '—'}</option>${modeles.map((x) => `<option value="${esc(x.id)}">${esc(x.nom)}</option>`).join('')}${valeur && !connus ? `<option value="${esc(valeur)}">${esc(valeur)} (introuvable dans Mocky)</option>` : ''}`;
-    sel.value = valeur;
-  }
+  if (selects.length || form.querySelector('[data-mk-exemples]')) remplirModeles(form, modeles);
   dessinerConsignesModeles(form, modeles);
   if (!mockyPret()) etatReglages(form, 'Renseigne l’adresse et la clé, puis enregistre pour voir les modèles.', false);
   else if (erreur) etatReglages(form, erreur, false);
@@ -3029,9 +3101,13 @@ async function enregistrerMocky(form) {
     formats: { meta: el.formatMeta.value, linkedin: el.formatLinkedin.value },
     consignes: el.consignes.value,
     consignesModeles: Object.fromEntries([...form.querySelectorAll('textarea[data-mk-consigne]')].map((x) => [x.dataset.mkConsigne, x.value])),
-    modeleDefaut: el.modeleDefaut.value,
-    evenements: Object.fromEntries([...form.querySelectorAll('[data-mk-ev-ligne]')].map((r) => [r.querySelector('[data-mk-ev]').value, r.querySelector('select[data-mk-liste]').value]).filter(([id, modele]) => id && modele)),
-    themes: [...form.querySelectorAll('#mkThemes .mk-regle')].map((r) => ({ theme: r.querySelector('[data-mk-theme]').value.trim(), modele: r.querySelector('select').value })).filter((r) => r.theme && r.modele),
+    defaut: lireChoix(form.querySelector('#mkDefaut [data-choix]')),
+    // Un modèle exact reste envoyé comme avant (son identifiant) ; des exemples, comme { mode, exemples }.
+    evenements: Object.fromEntries([...form.querySelectorAll('[data-mk-ev-ligne]')].map((r) => {
+      const c = lireChoix(r.querySelector('[data-choix]'));
+      return [r.querySelector('[data-mk-ev]').value, c.mode === 'inspiration' ? { mode: 'inspiration', exemples: c.exemples } : c.modele];
+    }).filter(([id, v]) => id && (typeof v === 'string' ? v : v.exemples.length))),
+    themes: [...form.querySelectorAll('#mkThemes .mk-regle')].map((r) => ({ theme: r.querySelector('[data-mk-theme]').value.trim(), ...lireChoix(r.querySelector('[data-choix]')) })).filter((r) => r.theme && (r.mode === 'inspiration' ? r.exemples.length : r.modele)),
   };
   if (!el.url.disabled) corps.url = el.url.value.trim();
   if (!el.cle.disabled && el.cle.value.trim()) corps.cle = el.cle.value.trim();
@@ -3176,6 +3252,8 @@ async function chargerAgent() {
 
 /* ================= événements du DOM ================= */
 document.addEventListener('click', (e) => {
+  // Un menu d'exemples ouvert se referme quand on clique ailleurs.
+  document.querySelectorAll('details.mk-multi[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; });
   const t = e.target.closest('[data-action]');
   if (!t) {
     // clic sur le fond du tiroir ou d’une fenêtre : fermeture
@@ -3296,6 +3374,15 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'mk-retirer-regle': t.closest('.mk-regle').remove(); break;
+    case 'mk-mode': {
+      const div = t.closest('[data-choix]');
+      div.dataset.mode = d.mode;
+      div.querySelectorAll('[data-action=mk-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === d.mode)));
+      const form = t.closest('form');
+      const zone = t.closest('[data-mk-choix-slot]');
+      if (form && zone) { form._mkChoix = form._mkChoix || {}; form._mkChoix[zone.dataset.mkChoixSlot] = lireChoix(div); }
+      break;
+    }
     case 'mk-ajouter-ev': {
       const form = t.closest('form');
       form.querySelector('#mkEvenements').insertAdjacentHTML('beforeend', ligneEvenement());
@@ -3345,6 +3432,15 @@ document.addEventListener('input', (e) => {
   if (form) { updateCount(form); updatePlanifHint(form); }
 });
 document.addEventListener('change', (e) => {
+  const multi = e.target.closest && e.target.closest('[data-mk-exemples]');
+  if (multi) {
+    resumeExemples(multi);
+    const zone = multi.closest('[data-mk-choix-slot]');
+    const form = multi.closest('form');
+    if (zone && form) { form._mkChoix = form._mkChoix || {}; form._mkChoix[zone.dataset.mkChoixSlot] = lireChoix(multi.closest('[data-choix]')); }
+  }
+  const sel = e.target.closest && e.target.closest('[data-mk-choix-slot] select[data-mk-liste]');
+  if (sel) { const form = sel.closest('form'); form._mkChoix = form._mkChoix || {}; form._mkChoix[sel.closest('[data-mk-choix-slot]').dataset.mkChoixSlot] = lireChoix(sel.closest('[data-choix]')); }
   if (e.target.name === 'eventId') $('#evInfo').innerHTML = evInfoHtml(e.target.value);
   if (e.target.name === 'plateformes') photoSlotsSync(e.target.closest('form'));
   if (e.target.matches && e.target.matches('input[data-photo-input]')) photoChosen(e.target);
