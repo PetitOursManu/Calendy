@@ -124,7 +124,7 @@ Dans la fiche, la liste « Automatique : … » annonce le modèle retenu, et on
 - les **assistants (MCP)** et les **clés d'assistant** activés par l'administrateur (Admin → Assistants (MCP)) ;
 - une **clé d'assistant en « Lecture + écriture »** (Réglages → Assistants connectés).
 
-Calendy garde l'adresse de Mocky et la clé sur son serveur (`mocky.json`, ou les variables `MOCKY_URL` et `MOCKY_API_KEY`) ; la clé n'est jamais renvoyée au navigateur. Il faut une version de Mocky qui propose les outils `export_screen` et `list_templates`.
+L'adresse est celle où l'on ouvre Mocky (avec ou sans `/mcp`). Si Calendy et Mocky tournent sur la même machine et que le test de connexion échoue, mets l'adresse **interne** de Mocky (par exemple `http://mocky:8787`) : le serveur de Calendy l'utilise pour parler à Mocky et télécharger les fichiers, tandis que les liens « Ouvrir dans Mocky » gardent l'adresse publique que Mocky donne. Calendy garde l'adresse de Mocky et la clé sur son serveur (`mocky.json`, ou les variables `MOCKY_URL` et `MOCKY_API_KEY`) ; la clé n'est jamais renvoyée au navigateur. Il faut une version de Mocky qui propose les outils `export_screen` et `list_templates`.
 
 ### Export Excel
 
