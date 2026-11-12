@@ -853,3 +853,20 @@ test('les posts « planifie » arrivés à échéance passent seuls en « publie
     fs.rmSync(dossier, { recursive: true, force: true });
   }
 });
+
+test('lien Canva : une adresse http(s) ou rien, repris dans l’export Excel', async () => {
+  const p = (await api('POST', '/api/posts', { titre: 'Avec Canva', datePublication: '2031-02-03', plateformes: ['Instagram'], statut: 'valide' })).json;
+  assert.equal((await api('PUT', `/api/posts/${p.id}`, { lienCanva: 'canva.com/design/abc' })).status, 400);
+  assert.equal((await api('PUT', `/api/posts/${p.id}`, { lienCanva: 'javascript:alert(1)' })).status, 400);
+  const ok = await api('PUT', `/api/posts/${p.id}`, { lienCanva: ' https://www.canva.com/design/DAG123/view ' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.lienCanva, 'https://www.canva.com/design/DAG123/view');
+  const res = await api('GET', '/api/export.xlsx?statuts=valide&du=2031-02-03&au=2031-02-03', undefined, { raw: true });
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(Buffer.from(await res.arrayBuffer()));
+  const ws = wb.worksheets[0];
+  const col = ws.getRow(1).values.indexOf('Lien Canva');
+  assert.ok(col > 0, 'colonne Lien Canva');
+  assert.equal(ws.getRow(2).getCell(col).value.hyperlink, 'https://www.canva.com/design/DAG123/view');
+  assert.equal((await api('PUT', `/api/posts/${p.id}`, { lienCanva: '' })).json.lienCanva, '');
+});

@@ -44,7 +44,7 @@ function fauxMocky() {
   const ok = (structured) => ({ content: [{ type: 'text', text: 'ok' }], structuredContent: structured });
   const garder = (name) => (args) => { appels.push({ name, args }); return null; };
   server.registerTool('list_templates', { inputSchema: {} }, async () => { garder('list_templates')({}); return ok({ templates: [{ id: 'tcuisine', name: 'Cuisine', screens: 2 }, { id: 'trose', name: 'Octobre Rose', screens: 1 }] }); });
-  const design = { brief: z.string(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
+  const design = { brief: z.string(), follow_layout: z.boolean().optional(), screen_type: z.string().optional(), screen_name: z.string().optional(), kind: z.string().optional(), audience: z.string().optional(), engine: z.string().optional(), picture_subject: z.string().optional() };
   server.registerTool('create_design', { inputSchema: { ...design, project_name: z.string().optional(), template_id: z.string().optional() } }, async (args) => {
     garder('create_design')(args);
     // Première réponse : encore en cours, comme un vrai design qui dépasse 40 s.
@@ -182,6 +182,7 @@ test('créer un visuel : un projet par post depuis le modèle, PNG dans les imag
   const ajout = appels.find((a) => a.name === 'add_screen');
   assert.equal(ajout.args.project_id, 'p-post');
   assert.equal(ajout.args.screen_type, 'linkedin');
+  assert.equal(ajout.args.follow_layout, true, 'même composition que le premier visuel du post');
   assert.ok(!appels.some((a) => a.name === 'create_design'));
 
   // Une modification remplace le PNG au même endroit, sans en ajouter un.
