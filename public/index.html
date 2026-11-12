@@ -1651,11 +1651,11 @@ function mockySlotHtml(p, slot, nets, occupe) {
     ? `<div class="mk-ligne">
         <a class="btn small" href="${esc(v.lien || p.mocky.lien)}" target="_blank" rel="noopener">Ouvrir dans Mocky</a>
         <button type="button" class="btn small" data-action="mocky-canva" data-id="${esc(p.id)}" data-slot="${slot}">${icon('i-down')}Télécharger pour Canva (.pptx)</button>
-        <button type="button" class="btn small" data-action="mocky-reprendre" data-id="${esc(p.id)}" data-slot="${slot}"${bloque}>Reprendre depuis Mocky</button>
+        <button type="button" class="btn small" data-action="mocky-reprendre" data-id="${esc(p.id)}" data-slot="${slot}"${bloque} title="Récupère la dernière version de Mocky (PNG et fichier Canva) et remplace l’image Mocky du post">${icon('i-down')}Mettre à jour l’image du post</button>
       </div>
       <div class="mk-modif"><label class="f" style="flex:1"><span class="hint">Demander une modification à Mocky</span><textarea data-mk-instruction="${slot}" rows="2" maxlength="4000" placeholder="Mets le titre plus gros, change la photo…"></textarea></label>
         <button type="button" class="btn small" data-action="mocky-modifier" data-id="${esc(p.id)}" data-slot="${slot}"${bloque}>Envoyer</button></div>
-      <p class="hint">Fait le ${esc(dateLongue(String(v.date || '').slice(0, 10) || p.datePublication))}. Une retouche faite à la main dans Mocky ? « Reprendre depuis Mocky » récupère le PNG et le fichier Canva à jour.</p>`
+      <p class="hint">Fait le ${esc(dateLongue(String(v.date || '').slice(0, 10) || p.datePublication))}. Une retouche faite à la main dans Mocky ? « Mettre à jour l’image du post » récupère le PNG et le fichier Canva à jour.</p>`
     : `<div class="mk-ligne"><select data-mk-modele="${slot}" aria-label="Modèle Mocky pour ${esc(s.titre)}"><option value="">Chargement des modèles…</option></select>
         <button type="button" class="btn small primary" data-action="mocky-creer" data-id="${esc(p.id)}" data-slot="${slot}"${bloque}>${icon('i-spark')}Créer le visuel avec Mocky</button></div>`;
   return `<div class="mk-slot" data-slot="${slot}"${visible ? '' : ' hidden'}><h4>${esc(s.titre)}</h4>${etat}${actions}</div>`;
@@ -1693,7 +1693,7 @@ async function lancerMocky(t, action) {
   const tache = await api('POST', `/api/posts/${encodeURIComponent(d.id)}/mocky`, corps);
   if (action === 'modifier') form.querySelector(`textarea[data-mk-instruction=${d.slot}]`).value = '';
   suivreTacheMocky(tache);
-  toast(action === 'creer' ? 'Mocky crée le visuel : cela prend quelques minutes.' : action === 'modifier' ? 'Mocky modifie le visuel : cela prend quelques minutes.' : 'Récupération du visuel depuis Mocky…');
+  toast(action === 'creer' ? 'Mocky crée le visuel : cela prend quelques minutes.' : action === 'modifier' ? 'Mocky modifie le visuel : cela prend quelques minutes.' : 'Mise à jour de l’image du post depuis Mocky…');
 }
 
 /** Suivi des tâches Mocky : on interroge le serveur tant qu'une tâche est en cours, puis on recharge le calendrier. */
