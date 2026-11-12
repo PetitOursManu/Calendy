@@ -225,6 +225,32 @@ test('un Mocky qui ne répond pas donne vite une erreur claire, en JSON', async 
   }
 });
 
+test('le test de connexion dit quand Mocky est trop ancien (outils absents)', async () => {
+  const ancien = http.createServer(async (req, res) => {
+    if (req.method !== 'POST') { res.writeHead(405); return res.end(); }
+    const morceaux = [];
+    for await (const c of req) morceaux.push(c);
+    const server = new McpServer({ name: 'mocky', version: '1.0.0' });
+    // Un Mocky d'avant les exports : create_design et les autres, mais ni list_templates ni export_screen.
+    for (const nom of ['create_design', 'add_screen', 'get_design', 'edit_design']) server.registerTool(nom, { inputSchema: { x: z.string().optional() } }, async () => ({ content: [] }));
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    res.on('close', () => { transport.close(); server.close(); });
+    await server.connect(transport);
+    await transport.handleRequest(req, res, JSON.parse(Buffer.concat(morceaux).toString('utf8')));
+  });
+  await new Promise((r) => ancien.listen(0, '127.0.0.1', r));
+  try {
+    await api('PUT', '/api/mocky/reglages', { url: `http://127.0.0.1:${ancien.address().port}` });
+    const r = await api('POST', '/api/mocky/tester', {});
+    assert.equal(r.status, 424);
+    assert.match(r.json.error, /ne propose pas : list_templates, export_screen/);
+    assert.match(r.json.error, /Coolify/);
+  } finally {
+    ancien.close();
+    await api('PUT', '/api/mocky/reglages', { url: `http://127.0.0.1:${portMocky}/` });
+  }
+});
+
 test('un refus de Mocky est rapporté dans la tâche', async () => {
   await api('PUT', '/api/mocky/reglages', { cle: 'mocky_ak_mauvaise' });
   const p = (await api('POST', '/api/posts', { titre: 'Refus', datePublication: '2030-10-20', plateformes: ['LinkedIn'] })).json;

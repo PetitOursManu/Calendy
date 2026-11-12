@@ -199,6 +199,13 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
           if (r.isError) throw new HttpError(ERREUR_SERVICE, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
           return { ...(r.structuredContent || {}), texte };
         },
+        async outils() {
+          try {
+            return (await client.listTools(undefined, { timeout: DELAI_LECTURE })).tools.map((t) => t.name);
+          } catch (err) {
+            throw erreurMocky(err);
+          }
+        },
         base: c.base,
       });
     } finally {
@@ -243,7 +250,18 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     return liste;
   }
 
+  /** Les outils sans lesquels Calendy ne peut rien faire : absents, c'est que ce Mocky tourne sur une version antérieure. */
+  const OUTILS_REQUIS = ['list_templates', 'create_design', 'add_screen', 'get_design', 'edit_design', 'export_screen'];
+
   async function tester() {
+    const offerts = await avecClient((m) => m.outils());
+    const manquants = OUTILS_REQUIS.filter((n) => !offerts.includes(n));
+    if (manquants.length) {
+      const ecriture = ['create_design', 'add_screen', 'edit_design'].every((n) => manquants.includes(n)) && !manquants.includes('get_design');
+      throw new HttpError(ERREUR_SERVICE, ecriture && !manquants.includes('list_templates')
+        ? 'La clé Mocky est en « Lecture seule » : crée une clé « Lecture + écriture » dans Mocky (Réglages → Assistants connectés).'
+        : `Connexion réussie, mais ce Mocky ne propose pas : ${manquants.join(', ')}. Il tourne sur une version antérieure aux exports et aux modèles (pull request « MCP : export PNG / PPTX Canva et nouveau projet depuis un modèle »). Dans Coolify, relance un déploiement depuis la branche main qui RECONSTRUIT l’image (pas un simple redémarrage). Outils proposés aujourd’hui : ${offerts.join(', ') || 'aucun'}.`);
+    }
     const liste = await listerModeles({ frais: true });
     return { ok: true, message: liste.length ? `Connexion réussie : ${liste.length} modèle${liste.length > 1 ? 's' : ''} de projet dans ce compte Mocky.` : 'Connexion réussie, mais ce compte Mocky n’a encore aucun modèle de projet (dans Mocky : Exporter → Enregistrer comme modèle).', modeles: liste };
   }
