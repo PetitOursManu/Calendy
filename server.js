@@ -1034,9 +1034,9 @@ const agent = creerAgent({ dataDir: DATA_DIR, HttpError, appelerRoute, instantLo
  */
 function appliquerVisuelMocky(postId, visuel, r) {
   const info = lireImage(r.png);
-  if (!info || info.type !== 'image/png' || !info.largeur || !info.hauteur) throw new HttpError(502, 'Mocky n’a pas renvoyé une image PNG valide.');
-  if (r.png.length > PHOTO_MAX * 4) throw new HttpError(502, 'Le PNG reçu de Mocky est trop lourd.');
-  if (r.pptx.length < 4 || r.pptx.readUInt32BE(0) !== 0x504b0304) throw new HttpError(502, 'Le fichier Canva reçu de Mocky n’est pas un .pptx valide.');
+  if (!info || info.type !== 'image/png' || !info.largeur || !info.hauteur) throw new HttpError(424, 'Mocky n’a pas renvoyé une image PNG valide.');
+  if (r.png.length > PHOTO_MAX * 4) throw new HttpError(424, 'Le PNG reçu de Mocky est trop lourd.');
+  if (r.pptx.length < 4 || r.pptx.readUInt32BE(0) !== 0x504b0304) throw new HttpError(424, 'Le fichier Canva reçu de Mocky n’est pas un .pptx valide.');
   const ecrits = [];
   const ecrire = (fichier, octets) => {
     const tmp = `${cheminPhoto(fichier)}.tmp`;

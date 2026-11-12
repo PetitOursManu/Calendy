@@ -39,6 +39,11 @@ const TEXTE_MESSAGE_MAX = 12000;
 const IMAGES_PAR_APPEL = 8;
 const IMAGE_OCTETS_MAX = 3.5 * 1024 * 1024; // une fois en base64, reste sous la limite de 5 Mo par image
 const CONFIRMATION_DUREE = 30 * 60 * 1000;
+/**
+ * Le code des erreurs du fournisseur d'IA : 424 (« dépendance en échec »). Pas 401, qui ferait redemander le jeton
+ * de Calendy ; pas 502, qu'un proxy placé devant Calendy (Traefik, Cloudflare…) remplace par sa page d'erreur HTML.
+ */
+const ERREUR_SERVICE = 424;
 const JOURS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 
 const CHAMPS_POST = {
@@ -187,18 +192,18 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
   function erreurFournisseur(err) {
     if (err instanceof HttpError) return err;
     const Anthropic = sdkAnthropic();
-    // Toujours un 502 : un 401 ferait redemander le jeton d'accès de Calendy.
-    if (err instanceof Anthropic.AuthenticationError) return new HttpError(502, 'Clé API refusée par Anthropic. Vérifie-la dans Réglages, onglet Agent IA.');
-    if (err instanceof Anthropic.PermissionDeniedError) return new HttpError(502, 'Cette clé API n’a pas accès à ce modèle.');
-    if (err instanceof Anthropic.NotFoundError) return new HttpError(502, 'Modèle introuvable chez Anthropic. Vérifie son nom dans les réglages.');
-    if (err instanceof Anthropic.RateLimitError) return new HttpError(502, 'Trop de demandes pour le moment. Réessaie dans une minute.');
-    if (err instanceof Anthropic.APIConnectionError) return new HttpError(502, 'Impossible de joindre Anthropic. Réessaie dans un instant.');
+    // Toujours ERREUR_SERVICE : un 401 ferait redemander le jeton d'accès de Calendy.
+    if (err instanceof Anthropic.AuthenticationError) return new HttpError(ERREUR_SERVICE, 'Clé API refusée par Anthropic. Vérifie-la dans Réglages, onglet Agent IA.');
+    if (err instanceof Anthropic.PermissionDeniedError) return new HttpError(ERREUR_SERVICE, 'Cette clé API n’a pas accès à ce modèle.');
+    if (err instanceof Anthropic.NotFoundError) return new HttpError(ERREUR_SERVICE, 'Modèle introuvable chez Anthropic. Vérifie son nom dans les réglages.');
+    if (err instanceof Anthropic.RateLimitError) return new HttpError(ERREUR_SERVICE, 'Trop de demandes pour le moment. Réessaie dans une minute.');
+    if (err instanceof Anthropic.APIConnectionError) return new HttpError(ERREUR_SERVICE, 'Impossible de joindre Anthropic. Réessaie dans un instant.');
     if (err instanceof Anthropic.APIError) {
       console.error('Agent IA :', err.status, err.message);
-      return new HttpError(502, `Erreur du service d’IA (${err.status ?? 'inconnue'}). Réessaie dans un instant.`);
+      return new HttpError(ERREUR_SERVICE, `Erreur du service d’IA (${err.status ?? 'inconnue'}). Réessaie dans un instant.`);
     }
     console.error('Agent IA :', err && err.message);
-    return new HttpError(502, 'Le service d’IA n’a pas répondu correctement. Réessaie dans un instant.');
+    return new HttpError(ERREUR_SERVICE, 'Le service d’IA n’a pas répondu correctement. Réessaie dans un instant.');
   }
 
   function sessionAnthropic(cfg, systeme, messages, outils) {
@@ -254,15 +259,15 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
         signal: AbortSignal.timeout(180000),
       });
     } catch {
-      throw new HttpError(502, 'Impossible de joindre OpenRouter. Réessaie dans un instant.');
+      throw new HttpError(ERREUR_SERVICE, 'Impossible de joindre OpenRouter. Réessaie dans un instant.');
     }
     const data = await res.json().catch(() => null);
-    if (res.status === 401) throw new HttpError(502, 'Clé API refusée par OpenRouter. Vérifie-la dans Réglages, onglet Agent IA.');
-    if (res.status === 402) throw new HttpError(502, 'Crédit OpenRouter insuffisant.');
-    if (res.status === 429) throw new HttpError(502, 'Trop de demandes pour le moment. Réessaie dans une minute.');
+    if (res.status === 401) throw new HttpError(ERREUR_SERVICE, 'Clé API refusée par OpenRouter. Vérifie-la dans Réglages, onglet Agent IA.');
+    if (res.status === 402) throw new HttpError(ERREUR_SERVICE, 'Crédit OpenRouter insuffisant.');
+    if (res.status === 429) throw new HttpError(ERREUR_SERVICE, 'Trop de demandes pour le moment. Réessaie dans une minute.');
     if (!res.ok || !data || data.error) {
       const detail = data && data.error && typeof data.error.message === 'string' ? ` : ${data.error.message.slice(0, 200)}` : '';
-      throw new HttpError(502, `OpenRouter a renvoyé une erreur${detail}`);
+      throw new HttpError(ERREUR_SERVICE, `OpenRouter a renvoyé une erreur${detail}`);
     }
     return data;
   }
@@ -274,7 +279,7 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
       async tour() {
         const data = await requeteOpenRouter('/chat/completions', cfg.cle, { model: cfg.modele, max_tokens: 8000, messages: fil, tools });
         const choix = data.choices && data.choices[0];
-        if (!choix || !choix.message) throw new HttpError(502, 'Réponse vide d’OpenRouter.');
+        if (!choix || !choix.message) throw new HttpError(ERREUR_SERVICE, 'Réponse vide d’OpenRouter.');
         const m = choix.message;
         fil.push({ role: 'assistant', content: m.content || '', ...(m.tool_calls && m.tool_calls.length ? { tool_calls: m.tool_calls } : {}) });
         const appels = (m.tool_calls || []).map((c) => {

@@ -36,6 +36,12 @@ const MODELE_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const DELAI_CONNEXION = 15000;
 const DELAI_LECTURE = 20000;
 const DELAI_TRAVAIL = 120000;
+/**
+ * Le code des erreurs venues de Mocky : 424 (« dépendance en échec »), jamais 502 ni 504. Un proxy placé devant
+ * Calendy (Traefik, Cloudflare…) remplace une réponse 502 ou 504 par SA page d'erreur HTML, et le message qui
+ * expliquait le problème n'arrivait jamais à l'écran.
+ */
+const ERREUR_SERVICE = 424;
 
 /** Pour comparer deux thèmes sans tenir compte des majuscules, des accents ni des espaces. */
 const cleTheme = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
@@ -155,13 +161,13 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     if (err instanceof HttpError) return err;
     const m = String((err && err.message) || err || '');
     if ((err && err.code === -32001) || /timed? ?out|délai/i.test(m)) {
-      return new HttpError(504, 'Mocky ne répond pas au serveur de Calendy (délai dépassé). Vérifie que le serveur de Calendy peut joindre cette adresse ; si Calendy et Mocky tournent sur la même machine (Docker, Coolify), essaie l’adresse interne de Mocky, par exemple http://mocky:8787.');
+      return new HttpError(ERREUR_SERVICE, 'Mocky ne répond pas au serveur de Calendy (délai dépassé). Vérifie que le serveur de Calendy peut joindre cette adresse ; si Calendy et Mocky tournent sur la même machine (Docker, Coolify), essaie l’adresse interne de Mocky, par exemple http://mocky:8787.');
     }
-    if (/401|403|invalid_token|Unauthorized/i.test(m)) return new HttpError(502, 'Mocky refuse la clé : vérifie la clé d’assistant (lecture + écriture) dans Réglages, onglet Mocky.');
-    if (/404/.test(m)) return new HttpError(502, 'Mocky ne répond pas à cette adresse : vérifie l’adresse, et que l’administrateur de Mocky a activé les assistants (MCP).');
-    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|certificate|abort/i.test(m)) return new HttpError(502, `Le serveur de Calendy n’arrive pas à joindre Mocky à cette adresse (${m.slice(0, 120)}). Si Calendy et Mocky tournent sur la même machine, essaie l’adresse interne de Mocky.`);
-    if (/content type|Unexpected token|not valid JSON/i.test(m)) return new HttpError(502, 'À cette adresse, ce n’est pas le serveur MCP de Mocky qui répond (une page web à la place). Vérifie l’adresse, et que l’administrateur de Mocky a activé les assistants (MCP).');
-    return new HttpError(502, `Mocky a répondu par une erreur : ${m.slice(0, 200)}`);
+    if (/401|403|invalid_token|Unauthorized/i.test(m)) return new HttpError(ERREUR_SERVICE, 'Mocky refuse la clé : vérifie la clé d’assistant (lecture + écriture) dans Réglages, onglet Mocky.');
+    if (/404/.test(m)) return new HttpError(ERREUR_SERVICE, 'Mocky ne répond pas à cette adresse : vérifie l’adresse, et que l’administrateur de Mocky a activé les assistants (MCP).');
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|certificate|abort/i.test(m)) return new HttpError(ERREUR_SERVICE, `Le serveur de Calendy n’arrive pas à joindre Mocky à cette adresse (${m.slice(0, 120)}). Si Calendy et Mocky tournent sur la même machine, essaie l’adresse interne de Mocky.`);
+    if (/content type|Unexpected token|not valid JSON/i.test(m)) return new HttpError(ERREUR_SERVICE, 'À cette adresse, ce n’est pas le serveur MCP de Mocky qui répond (une page web à la place). Vérifie l’adresse, et que l’administrateur de Mocky a activé les assistants (MCP).');
+    return new HttpError(ERREUR_SERVICE, `Mocky a répondu par une erreur : ${m.slice(0, 200)}`);
   }
 
   /** Une connexion MCP le temps d'une série d'appels. Mocky est sans état : rien n'est gardé entre deux séries. */
@@ -190,7 +196,7 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
             throw erreurMocky(err);
           }
           const texte = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-          if (r.isError) throw new HttpError(502, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
+          if (r.isError) throw new HttpError(ERREUR_SERVICE, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
           return { ...(r.structuredContent || {}), texte };
         },
         base: c.base,
@@ -222,9 +228,9 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     } catch (err) {
       throw erreurMocky(err);
     }
-    if (!res.ok) throw new HttpError(502, `Le fichier ${attendu} n’a pas pu être téléchargé depuis Mocky (${res.status}).`);
+    if (!res.ok) throw new HttpError(ERREUR_SERVICE, `Le fichier ${attendu} n’a pas pu être téléchargé depuis Mocky (${res.status}).`);
     const buf = Buffer.from(await res.arrayBuffer());
-    if (!buf.length || buf.length > TELECHARGEMENT_MAX) throw new HttpError(502, `Le fichier ${attendu} reçu de Mocky est vide ou trop lourd.`);
+    if (!buf.length || buf.length > TELECHARGEMENT_MAX) throw new HttpError(ERREUR_SERVICE, `Le fichier ${attendu} reçu de Mocky est vide ou trop lourd.`);
     return buf;
   }
 
@@ -276,27 +282,27 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     const limite = Date.now() + ATTENTE_MAX;
     let r = reponse;
     while (r.status !== 'done') {
-      if (r.status === 'failed') throw new HttpError(502, `Mocky n’a pas pu faire le visuel : ${String(r.error || r.texte || '').slice(0, 300)}`);
-      if (r.status === 'needs_clarification') throw new HttpError(502, 'Mocky demande plus de précisions : complète la description, l’angle ou l’idée d’image du post, puis réessaie.');
-      if (r.status === 'awaiting_code') throw new HttpError(502, 'Ce compte Mocky fait écrire le code par l’assistant : dans Mocky, Réglages → Assistants connectés, choisis « Le modèle de Mocky ».');
-      if (!r.jobId) throw new HttpError(502, `Réponse inattendue de Mocky : ${String(r.texte || '').slice(0, 200)}`);
-      if (Date.now() > limite) throw new HttpError(504, 'Mocky met trop de temps : le visuel sera peut-être dans Mocky plus tard ; utilise alors « Reprendre depuis Mocky ».');
+      if (r.status === 'failed') throw new HttpError(ERREUR_SERVICE, `Mocky n’a pas pu faire le visuel : ${String(r.error || r.texte || '').slice(0, 300)}`);
+      if (r.status === 'needs_clarification') throw new HttpError(ERREUR_SERVICE, 'Mocky demande plus de précisions : complète la description, l’angle ou l’idée d’image du post, puis réessaie.');
+      if (r.status === 'awaiting_code') throw new HttpError(ERREUR_SERVICE, 'Ce compte Mocky fait écrire le code par l’assistant : dans Mocky, Réglages → Assistants connectés, choisis « Le modèle de Mocky ».');
+      if (!r.jobId) throw new HttpError(ERREUR_SERVICE, `Réponse inattendue de Mocky : ${String(r.texte || '').slice(0, 200)}`);
+      if (Date.now() > limite) throw new HttpError(ERREUR_SERVICE, 'Mocky met trop de temps : le visuel sera peut-être dans Mocky plus tard ; utilise alors « Reprendre depuis Mocky ».');
       tache.etape = r.progress ? `Mocky travaille (${String(r.progress).slice(0, 40)})` : 'Mocky travaille';
       r = await m.outil('get_design', { job_id: r.jobId });
     }
-    if (!r.projectId || !r.screenId) throw new HttpError(502, 'Mocky n’a pas dit quel écran il a fait.');
+    if (!r.projectId || !r.screenId) throw new HttpError(ERREUR_SERVICE, 'Mocky n’a pas dit quel écran il a fait.');
     return r;
   }
 
   async function exporter(m, projectId, screenId, tache) {
     tache.etape = 'Export du PNG';
     const png = await m.outil('export_screen', { project_id: projectId, screen_id: screenId, format: 'png' });
-    if (!png.download) throw new HttpError(502, 'Mocky n’a pas donné de lien vers le PNG.');
-    if (!/\.png$/i.test(png.filename || '')) throw new HttpError(502, 'Ce visuel a plusieurs pages : Calendy ne garde qu’une image par visuel Mocky pour l’instant.');
+    if (!png.download) throw new HttpError(ERREUR_SERVICE, 'Mocky n’a pas donné de lien vers le PNG.');
+    if (!/\.png$/i.test(png.filename || '')) throw new HttpError(ERREUR_SERVICE, 'Ce visuel a plusieurs pages : Calendy ne garde qu’une image par visuel Mocky pour l’instant.');
     const pngOctets = await telecharger(versBase(png.download, m.base), 'PNG');
     tache.etape = 'Export du fichier Canva';
     const pptx = await m.outil('export_screen', { project_id: projectId, screen_id: screenId, format: 'pptx-edit' });
-    if (!pptx.download) throw new HttpError(502, 'Mocky n’a pas donné de lien vers le fichier Canva.');
+    if (!pptx.download) throw new HttpError(ERREUR_SERVICE, 'Mocky n’a pas donné de lien vers le fichier Canva.');
     const pptxOctets = await telecharger(versBase(pptx.download, m.base), 'Canva (.pptx)');
     return { png: pngOctets, pptx: pptxOctets, nomCanva: String(pptx.filename || 'visuel - Canva.pptx').slice(0, 160) };
   }

@@ -215,7 +215,7 @@ test('un Mocky qui ne répond pas donne vite une erreur claire, en JSON', async 
     await api('PUT', '/api/mocky/reglages', { url: `http://127.0.0.1:${muet.address().port}` });
     const debut = Date.now();
     const r = await api('POST', '/api/mocky/tester', {});
-    assert.equal(r.status, 504);
+    assert.equal(r.status, 424, 'jamais 502 ni 504 : un proxy les remplacerait par sa page HTML');
     assert.match(r.json.error, /délai dépassé/);
     assert.ok(Date.now() - debut < 30000, 'avant le délai habituel d’un proxy');
   } finally {
