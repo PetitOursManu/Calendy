@@ -63,6 +63,11 @@ const CONSIGNES_MAX = 3000;
  */
 const CONSIGNE_COPIE = `Tu écris pour Calendy le composant d'un visuel de réseau social, en suivant les règles de Mocky ci-dessus.
 Si ces règles contiennent un LAYOUT MODEL (le code d'un modèle choisi par l'utilisateur), PARS DE CE CODE : recopie-le et ne change que le contenu propre à ce post (titres, accroche, liste, textes, photo). Garde à l'identique la structure, les classes, les couleurs, les polices, les tailles et les blocs fixes (coordonnées, contact, emplacement du logo). Vérifie qu'aucun texte de l'ancien sujet ne reste.
+Le nouveau texte doit tenir dans la place de l'ancien :
+- garde les mêmes largeurs et hauteurs de blocs, de pastilles et de cadres (ne passe pas d'une largeur fixe à une largeur automatique, ni l'inverse) ;
+- un libellé court (pastille, bouton, étiquette) tient sur UNE ligne : s'il est plus long que celui du modèle, raccourcis-le plutôt que de le laisser passer à la ligne ;
+- les éléments décoratifs liés à un texte (soulignement, filet, surlignage, trait sous un titre) restent à la même place par rapport à ce texte : s'ils ont une position fixe calée sur l'ancien texte, recale-les sur le nouveau ;
+- les icônes restent du même jeu et du même style que celles du modèle ; une icône qui change de sens prend une icône de ce même jeu.
 Réponds uniquement par le composant complet, sans explication.`;
 
 /** Les deux parties de ce que Mocky donne à écrire (submit_screen) : ses règles et la demande. */
@@ -249,7 +254,9 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
             }
             throw new HttpError(ERREUR_SERVICE, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
           }
-          return { ...(r.structuredContent || {}), texte };
+          // Les images (la capture du visuel) servent à la vérification visuelle par l'agent.
+          const images = (r.content || []).filter((b) => b.type === 'image' && b.data).map((b) => ({ mime: b.mimeType || 'image/jpeg', data: b.data }));
+          return { ...(r.structuredContent || {}), texte, images };
         },
         async outils() {
           try {
@@ -376,6 +383,54 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     };
   }
 
+  /** Les défauts à corriger que l'agent voit sur la capture, ou null si tout va bien. Deux corrections au plus. */
+  const CORRECTIONS_MAX = 2;
+  const CONSIGNE_VERIFICATION = `VÉRIFICATION VISUELLE. Tu compares la capture d'un visuel de réseau social au modèle dont il est une copie.
+Image MODÈLE : la mise en page de référence (son texte est celui d'un autre post, c'est normal). Image VISUEL : le visuel à vérifier.
+Relève UNIQUEMENT les défauts de mise en forme du VISUEL : texte qui déborde, se coupe, ou passe sur deux lignes alors que le modèle tient sur une ; blocs, pastilles ou cadres qui n'ont pas les mêmes largeurs, hauteurs ou alignements que dans le modèle ; texte mal aligné dans sa pastille ; soulignement, filet ou décor décalé par rapport à son texte ; icônes de styles ou de tailles différents ; élément du modèle qui manque ; contraste illisible.
+Ne commente ni le contenu, ni la photo, ni les couleurs choisies par le modèle.
+Si rien n'est à corriger, réponds exactement : OK
+Sinon, réponds par une consigne de modification pour un designer, courte et précise, en liste, qui dit quoi changer et où (par exemple : « Mets les trois pastilles à la même largeur que la plus large, texte sur une ligne »). Pas d'autre texte.`;
+
+  async function verifier(m, fini, tache) {
+    if (!ecrireCode) return null;
+    let lien = null;
+    let capture = fini.images && fini.images[0];
+    for (let tour = 0; tour < CORRECTIONS_MAX; tour++) {
+      tache.etape = 'L’agent IA vérifie le visuel';
+      let modele = null;
+      try {
+        const projet = await m.outil('get_project', { project_id: fini.projectId }, DELAI_LECTURE);
+        const ecrans = Array.isArray(projet.screens) ? projet.screens : [];
+        const nouveau = ecrans.find((s) => s.id === fini.screenId);
+        const autres = ecrans.filter((s) => s.id !== fini.screenId);
+        const memeFormat = autres.filter((s) => nouveau && s.width === nouveau.width && s.height === nouveau.height);
+        const choisi = (memeFormat.length ? memeFormat : autres).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))[0];
+        if (choisi) modele = ((await m.outil('get_screenshot', { project_id: fini.projectId, screen_id: choisi.id })).images || [])[0] || null;
+        if (!capture) capture = ((await m.outil('get_screenshot', { project_id: fini.projectId, screen_id: fini.screenId })).images || [])[0] || null;
+      } catch {
+        return lien; // une vérification impossible ne doit pas coûter le visuel
+      }
+      if (!capture || !modele) return lien;
+      const consignes = lire().consignes;
+      const avis = await ecrireCode({
+        systeme: [CONSIGNE_VERIFICATION, consignes ? `Consignes visuelles de l'utilisateur :\n${consignes}` : ''].filter(Boolean).join('\n\n'),
+        messages: [{ role: 'user', content: [{ type: 'text', text: 'MODÈLE :' }, { type: 'image', ...modele }, { type: 'text', text: 'VISUEL :' }, { type: 'image', ...capture }, { type: 'text', text: 'Ce visuel a-t-il des défauts de mise en forme à corriger ?' }] }],
+      }).catch(() => 'OK');
+      if (/^\s*OK\b/i.test(avis) || !avis.trim()) return lien;
+      tache.etape = `Correction de la mise en forme (${tour + 1}/${CORRECTIONS_MAX})`;
+      const r = await m.outil('edit_design', {
+        project_id: fini.projectId,
+        screen_id: fini.screenId,
+        instruction: `Corrige uniquement ces défauts de mise en forme, sans changer les textes, les couleurs ni le reste du visuel :\n${avis.trim().slice(0, 3500)}`,
+      });
+      const corrige = await attendre(m, r, tache);
+      lien = corrige.link || lien;
+      capture = (corrige.images && corrige.images[0]) || null;
+    }
+    return lien;
+  }
+
   async function attendre(m, reponse, tache) {
     const limite = Date.now() + ATTENTE_MAX;
     let r = reponse;
@@ -459,6 +514,8 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
         const fini = await attendre(m, r, tache);
         ({ projectId, screenId } = { projectId: fini.projectId, screenId: fini.screenId });
         lien = fini.link;
+        // Comme Claude Desktop qui « contrôle la capture » : l'agent compare le visuel au modèle et fait corriger.
+        if (reglages.redacteur === 'calendy') lien = (await verifier(m, fini, tache)) || lien;
       } else {
         if (!existant || !post.mocky.projet) throw new HttpError(409, 'Ce visuel n’a pas encore été créé avec Mocky.');
         projectId = post.mocky.projet;
