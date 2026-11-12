@@ -6,11 +6,12 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DATA_DIR=/data
 
-# Seule dépendance d'exécution : exceljs (export Excel). Le connecteur MCP est empaqueté à part (dist/).
+# Dépendances d'exécution : exceljs (export Excel), le SDK Anthropic (agent IA) et le client MCP (visuels Mocky).
+# Le connecteur MCP pour Claude Desktop est empaqueté à part (dist/).
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY server.js agent.js seed.json ./
+COPY server.js agent.js mocky.js seed.json ./
 COPY public ./public
 
 # Les données (data.json) vivent dans un volume : elles survivent aux mises à jour de l'image.

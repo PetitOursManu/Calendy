@@ -1,0 +1,378 @@
+'use strict';
+/**
+ * Visuels Mocky : Calendy demande à Mocky (son serveur MCP, avec une clé d'assistant) le visuel d'un post,
+ * puis range le PNG dans les images du post et le fichier Canva (.pptx, « tout en éléments séparés ») à côté.
+ *
+ * - Un projet Mocky par post : le premier visuel crée le projet, à partir du modèle choisi (create_design avec
+ *   template_id) ; le second visuel du même post (l'autre réseau) est ajouté dans ce même projet (add_screen).
+ * - Le modèle se choisit par événement, puis par thème (l'atelier du post), puis le modèle par défaut.
+ * - Une modification demandée passe par edit_design (Mocky garde la version précédente) ; « Reprendre depuis Mocky »
+ *   ré-exporte simplement l'écran, pour récupérer une retouche faite à la main dans Mocky.
+ *
+ * Une génération prend de 30 secondes à plusieurs minutes : chaque demande devient une « tâche » suivie par
+ * l'interface (GET /api/mocky/taches). Mocky ne fait qu'un design à la fois par compte : Calendy aussi.
+ *
+ * Réglages dans DATA_DIR/mocky.json (fichier séparé de data.json, mode 600). MOCKY_URL et MOCKY_API_KEY,
+ * si elles existent, ont la priorité sur ce qui est saisi dans l'interface. La clé n'est jamais renvoyée au navigateur.
+ */
+
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const VISUELS = {
+  meta: { libelle: 'Instagram et Facebook', ecran: 'instagram', court: 'Insta-Facebook' },
+  linkedin: { libelle: 'LinkedIn', ecran: 'linkedin', court: 'LinkedIn' },
+};
+const ATTENTE_MAX = 20 * 60 * 1000; // une génération avec Muse peut être longue ; au-delà, on abandonne
+const TELECHARGEMENT_MAX = 40 * 1024 * 1024;
+const TACHES_GARDEES = 30;
+const MODELE_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** Pour comparer deux thèmes sans tenir compte des majuscules, des accents ni des espaces. */
+const cleTheme = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nomStructure, client: clientInjecte }) {
+  const FICHIER = path.join(dataDir, 'mocky.json');
+  const taches = new Map();
+  let modelesCache = null;
+
+  /* ------------------------------ réglages ------------------------------ */
+
+  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', themes: [], evenements: {} });
+
+  function lire() {
+    try {
+      const f = JSON.parse(fs.readFileSync(FICHIER, 'utf8'));
+      return { ...defauts(), ...f, themes: Array.isArray(f.themes) ? f.themes : [], evenements: f.evenements && typeof f.evenements === 'object' ? f.evenements : {} };
+    } catch {
+      return defauts();
+    }
+  }
+
+  function ecrire(r) {
+    fs.mkdirSync(dataDir, { recursive: true });
+    const tmp = `${FICHIER}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(r, null, 2), { encoding: 'utf8', mode: 0o600 });
+    fs.renameSync(tmp, FICHIER);
+  }
+
+  const urlEnv = () => String(process.env.MOCKY_URL || '').trim();
+  const cleEnv = () => String(process.env.MOCKY_API_KEY || '').trim();
+
+  function connexion(r = lire()) {
+    const brut = urlEnv() || r.url;
+    const cle = cleEnv() || r.cle;
+    if (!brut || !cle) return null;
+    // L'adresse donnée peut être celle de Mocky ou directement celle de son point MCP.
+    const base = brut.replace(/\/+$/, '').replace(/\/mcp$/, '');
+    return { base, mcp: `${base}/mcp`, cle };
+  }
+
+  /** Ce que le navigateur peut voir : jamais la clé. */
+  function publics(r = lire()) {
+    const { cle, ...reste } = r;
+    return {
+      ...reste,
+      url: urlEnv() || r.url,
+      urlSource: urlEnv() ? 'env' : r.url ? 'reglages' : null,
+      cle: { definie: Boolean(cleEnv() || cle), source: cleEnv() ? 'env' : cle ? 'reglages' : null, variable: 'MOCKY_API_KEY' },
+      pret: Boolean(connexion(r)),
+    };
+  }
+
+  function modifier(body) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new HttpError(400, 'Corps JSON attendu.');
+    const r = lire();
+    if ('url' in body) {
+      const url = String(body.url ?? '').trim();
+      if (url) {
+        let u;
+        try { u = new URL(url); } catch { throw new HttpError(400, 'Adresse de Mocky invalide.'); }
+        if (!/^https?:$/.test(u.protocol)) throw new HttpError(400, 'L’adresse de Mocky doit commencer par https://.');
+      }
+      r.url = url.slice(0, 300);
+    }
+    if ('cle' in body) {
+      const cle = body.cle === null ? '' : String(body.cle).trim();
+      if (cle.length > 300 || /\s/.test(cle)) throw new HttpError(400, 'Clé Mocky invalide.');
+      if (cle && !cle.startsWith('mocky_ak_')) throw new HttpError(400, 'Une clé d’assistant Mocky commence par « mocky_ak_ ».');
+      r.cle = cle;
+    }
+    if ('modeleDefaut' in body) r.modeleDefaut = modeleOuVide(body.modeleDefaut);
+    if ('themes' in body) {
+      if (!Array.isArray(body.themes) || body.themes.length > 100) throw new HttpError(400, 'Champ « themes » : une liste de 100 règles au plus.');
+      const vus = new Set();
+      r.themes = [];
+      for (const t of body.themes) {
+        const theme = String((t && t.theme) || '').trim().slice(0, 200);
+        const modele = modeleOuVide(t && t.modele);
+        if (!theme || !modele || vus.has(cleTheme(theme))) continue;
+        vus.add(cleTheme(theme));
+        r.themes.push({ theme, modele });
+      }
+    }
+    if ('evenements' in body) {
+      if (!body.evenements || typeof body.evenements !== 'object' || Array.isArray(body.evenements)) throw new HttpError(400, 'Champ « evenements » : un objet { identifiant: modèle }.');
+      r.evenements = {};
+      for (const [id, m] of Object.entries(body.evenements).slice(0, 500)) {
+        const modele = modeleOuVide(m);
+        if (/^[\w-]{1,64}$/.test(id) && modele) r.evenements[id] = modele;
+      }
+    }
+    ecrire(r);
+    modelesCache = null;
+    return publics(r);
+  }
+
+  function modeleOuVide(v) {
+    const m = String(v ?? '').trim();
+    if (m && !MODELE_RE.test(m)) throw new HttpError(400, `Identifiant de modèle invalide : ${m.slice(0, 40)}`);
+    return m;
+  }
+
+  /** Le modèle d'un post : celui de son événement, sinon celui de son thème, sinon le modèle par défaut. */
+  function modelePour(post, r = lire()) {
+    if (post.eventId && r.evenements[post.eventId]) return { modele: r.evenements[post.eventId], raison: 'evenement' };
+    const theme = cleTheme(post.atelier);
+    const regle = theme && r.themes.find((t) => cleTheme(t.theme) === theme);
+    if (regle) return { modele: regle.modele, raison: 'theme' };
+    if (r.modeleDefaut) return { modele: r.modeleDefaut, raison: 'defaut' };
+    return { modele: '', raison: 'aucun' };
+  }
+
+  /* ------------------------------ client MCP ------------------------------ */
+
+  function erreurMocky(err) {
+    if (err instanceof HttpError) return err;
+    const m = String((err && err.message) || err || '');
+    if (/401|403|invalid_token|Unauthorized/i.test(m)) return new HttpError(502, 'Mocky refuse la clé : vérifie la clé d’assistant (lecture + écriture) dans Réglages, onglet Mocky.');
+    if (/404/.test(m)) return new HttpError(502, 'Mocky ne répond pas à cette adresse : vérifie l’adresse, et que l’administrateur de Mocky a activé les assistants (MCP).');
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|timed? ?out|abort/i.test(m)) return new HttpError(502, 'Impossible de joindre Mocky. Réessaie dans un instant.');
+    return new HttpError(502, `Mocky a répondu par une erreur : ${m.slice(0, 200)}`);
+  }
+
+  /** Une connexion MCP le temps d'une série d'appels. Mocky est sans état : rien n'est gardé entre deux séries. */
+  async function avecClient(fn) {
+    const c = connexion();
+    if (!c) throw new HttpError(400, 'Mocky n’est pas configuré : renseigne son adresse et une clé d’assistant dans Réglages, onglet Mocky.');
+    if (clientInjecte) return fn(clientInjecte(c));
+    const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const client = new Client({ name: 'calendy', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(c.mcp), { requestInit: { headers: { Authorization: `Bearer ${c.cle}` } } });
+    try {
+      await client.connect(transport);
+    } catch (err) {
+      throw erreurMocky(err);
+    }
+    try {
+      return await fn({
+        async outil(name, args) {
+          let r;
+          try {
+            // Mocky attend lui-même une quarantaine de secondes avant de rendre la main : on lui en laisse le temps.
+            r = await client.callTool({ name, arguments: args }, undefined, { timeout: 120000 });
+          } catch (err) {
+            throw erreurMocky(err);
+          }
+          const texte = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+          if (r.isError) throw new HttpError(502, `Mocky : ${texte.slice(0, 400) || 'refus sans explication.'}`);
+          return { ...(r.structuredContent || {}), texte };
+        },
+        base: c.base,
+      });
+    } finally {
+      await client.close().catch(() => {});
+    }
+  }
+
+  async function telecharger(url, attendu) {
+    let res;
+    try {
+      res = await fetch(url, { signal: AbortSignal.timeout(120000) });
+    } catch (err) {
+      throw erreurMocky(err);
+    }
+    if (!res.ok) throw new HttpError(502, `Le fichier ${attendu} n’a pas pu être téléchargé depuis Mocky (${res.status}).`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length || buf.length > TELECHARGEMENT_MAX) throw new HttpError(502, `Le fichier ${attendu} reçu de Mocky est vide ou trop lourd.`);
+    return buf;
+  }
+
+  /** Les modèles de projet du compte Mocky (gardés une minute : la page des réglages les demande souvent). */
+  async function listerModeles({ frais = false } = {}) {
+    if (!frais && modelesCache && modelesCache.expire > Date.now()) return modelesCache.liste;
+    const out = await avecClient((m) => m.outil('list_templates', {}));
+    const liste = (out.templates || []).map((t) => ({ id: String(t.id), nom: String(t.name || t.id), ecrans: t.screens || 0 }));
+    modelesCache = { liste, expire: Date.now() + 60000 };
+    return liste;
+  }
+
+  async function tester() {
+    const liste = await listerModeles({ frais: true });
+    return { ok: true, message: liste.length ? `Connexion réussie : ${liste.length} modèle${liste.length > 1 ? 's' : ''} de projet dans ce compte Mocky.` : 'Connexion réussie, mais ce compte Mocky n’a encore aucun modèle de projet (dans Mocky : Exporter → Enregistrer comme modèle).', modeles: liste };
+  }
+
+  /* ------------------------------ tâches ------------------------------ */
+
+  const vueTache = (t) => ({ id: t.id, postId: t.postId, visuel: t.visuel, action: t.action, etat: t.etat, etape: t.etape, message: t.message, debut: t.debut, fin: t.fin || null });
+
+  function listerTaches() {
+    return [...taches.values()].sort((a, b) => b.debut - a.debut).map(vueTache);
+  }
+
+  function lireTache(id) {
+    const t = taches.get(String(id));
+    if (!t) throw new HttpError(404, 'Tâche inconnue (le serveur a peut-être redémarré).');
+    return vueTache(t);
+  }
+
+  /** Le texte que Mocky lit comme le CONTENU du visuel (pas une consigne). */
+  function briefDe(post, visuel) {
+    const ev = post.eventId ? nomEvenement(post.eventId) : '';
+    const legende = String(post.description || '').replace(/\s+\n/g, '\n').trim();
+    const parties = [
+      `Visuel du post ${VISUELS[visuel].libelle} « ${post.titre} »${nomStructure() ? `, pour ${nomStructure()}` : ''}.`,
+      `Publication le ${post.datePublication}${post.heure ? ` à ${post.heure.replace(':', 'h')}` : ''}.`,
+      ev ? `Événement : ${ev}.` : '',
+      post.angle ? `Angle : ${post.angle}` : '',
+      legende ? `Texte du post (le visuel en reprend l’essentiel, pas tout) :\n${legende.slice(0, 1800)}` : '',
+      post.imageIdee ? `Idée d’image : ${post.imageIdee}` : '',
+    ];
+    return parties.filter(Boolean).join('\n').slice(0, 3900);
+  }
+
+  /** Attend la fin d'un travail Mocky : chaque appel à get_design attend lui-même une quarantaine de secondes. */
+  async function attendre(m, reponse, tache) {
+    const limite = Date.now() + ATTENTE_MAX;
+    let r = reponse;
+    while (r.status !== 'done') {
+      if (r.status === 'failed') throw new HttpError(502, `Mocky n’a pas pu faire le visuel : ${String(r.error || r.texte || '').slice(0, 300)}`);
+      if (r.status === 'needs_clarification') throw new HttpError(502, 'Mocky demande plus de précisions : complète la description, l’angle ou l’idée d’image du post, puis réessaie.');
+      if (r.status === 'awaiting_code') throw new HttpError(502, 'Ce compte Mocky fait écrire le code par l’assistant : dans Mocky, Réglages → Assistants connectés, choisis « Le modèle de Mocky ».');
+      if (!r.jobId) throw new HttpError(502, `Réponse inattendue de Mocky : ${String(r.texte || '').slice(0, 200)}`);
+      if (Date.now() > limite) throw new HttpError(504, 'Mocky met trop de temps : le visuel sera peut-être dans Mocky plus tard ; utilise alors « Reprendre depuis Mocky ».');
+      tache.etape = r.progress ? `Mocky travaille (${String(r.progress).slice(0, 40)})` : 'Mocky travaille';
+      r = await m.outil('get_design', { job_id: r.jobId });
+    }
+    if (!r.projectId || !r.screenId) throw new HttpError(502, 'Mocky n’a pas dit quel écran il a fait.');
+    return r;
+  }
+
+  async function exporter(m, projectId, screenId, tache) {
+    tache.etape = 'Export du PNG';
+    const png = await m.outil('export_screen', { project_id: projectId, screen_id: screenId, format: 'png' });
+    if (!png.download) throw new HttpError(502, 'Mocky n’a pas donné de lien vers le PNG.');
+    if (!/\.png$/i.test(png.filename || '')) throw new HttpError(502, 'Ce visuel a plusieurs pages : Calendy ne garde qu’une image par visuel Mocky pour l’instant.');
+    const pngOctets = await telecharger(png.download, 'PNG');
+    tache.etape = 'Export du fichier Canva';
+    const pptx = await m.outil('export_screen', { project_id: projectId, screen_id: screenId, format: 'pptx-edit' });
+    if (!pptx.download) throw new HttpError(502, 'Mocky n’a pas donné de lien vers le fichier Canva.');
+    const pptxOctets = await telecharger(pptx.download, 'Canva (.pptx)');
+    return { png: pngOctets, pptx: pptxOctets, nomCanva: String(pptx.filename || 'visuel - Canva.pptx').slice(0, 160) };
+  }
+
+  async function executer(tache, demande) {
+    const { postId, visuel, action } = tache;
+    await avecClient(async (m) => {
+      const post = lirePost(postId);
+      const existant = post.mocky && post.mocky.visuels && post.mocky.visuels[visuel];
+      let projectId;
+      let screenId;
+      let lien;
+      let modele = (post.mocky && post.mocky.modele) || '';
+      if (action === 'creer') {
+        const choix = demande.modele !== undefined ? { modele: demande.modele } : modelePour(post);
+        modele = choix.modele;
+        const commun = {
+          brief: briefDe(post, visuel),
+          screen_type: VISUELS[visuel].ecran,
+          screen_name: `${post.titre} · ${VISUELS[visuel].court}`.slice(0, 80),
+          kind: `Post ${VISUELS[visuel].libelle}`,
+          audience: nomStructure() ? `Les abonnés de ${nomStructure()}` : undefined,
+          engine: 'mocky',
+          ...(post.imageIdee ? { picture_subject: post.imageIdee.slice(0, 300) } : {}),
+        };
+        let r = null;
+        const projet = post.mocky && post.mocky.projet;
+        if (projet) {
+          // Le projet de ce post existe déjà (l'autre réseau, ou une version précédente) : on y ajoute l'écran.
+          tache.etape = 'Ajout de l’écran au projet du post';
+          try {
+            r = await m.outil('add_screen', { ...commun, project_id: projet });
+          } catch (err) {
+            if (!/projet|project/i.test(err.message)) throw err;
+            r = null; // le projet a été supprimé dans Mocky : on en recrée un
+          }
+        }
+        if (!r) {
+          tache.etape = modele ? 'Nouveau projet à partir du modèle' : 'Nouveau projet';
+          r = await m.outil('create_design', { ...commun, project_name: `${post.datePublication} · ${post.titre}`.slice(0, 120), ...(modele ? { template_id: modele } : {}) });
+        }
+        const fini = await attendre(m, r, tache);
+        ({ projectId, screenId } = { projectId: fini.projectId, screenId: fini.screenId });
+        lien = fini.link;
+      } else {
+        if (!existant || !post.mocky.projet) throw new HttpError(409, 'Ce visuel n’a pas encore été créé avec Mocky.');
+        projectId = post.mocky.projet;
+        screenId = existant.ecran;
+        lien = existant.lien;
+        if (action === 'modifier') {
+          tache.etape = 'Modification dans Mocky';
+          const r = await m.outil('edit_design', { project_id: projectId, screen_id: screenId, instruction: demande.instruction });
+          const fini = await attendre(m, r, tache);
+          lien = fini.link || lien;
+        }
+      }
+      const fichiers = await exporter(m, projectId, screenId, tache);
+      tache.etape = 'Enregistrement dans Calendy';
+      appliquer(postId, visuel, { ...fichiers, projet: projectId, ecran: screenId, lien, lienProjet: `${m.base}/p/${encodeURIComponent(projectId)}`, modele, action });
+    });
+  }
+
+  /** Lance une tâche et rend la main tout de suite : l'interface suit son avancement. */
+  function lancer(postId, body) {
+    const b = body && typeof body === 'object' ? body : {};
+    const visuel = b.visuel;
+    if (!VISUELS[visuel]) throw new HttpError(400, 'Champ « visuel » : meta (Instagram + Facebook) ou linkedin.');
+    const action = b.action || 'creer';
+    if (!['creer', 'modifier', 'reprendre'].includes(action)) throw new HttpError(400, 'Champ « action » : creer, modifier ou reprendre.');
+    const demande = {};
+    if (action === 'modifier') {
+      demande.instruction = String(b.instruction || '').trim();
+      if (!demande.instruction) throw new HttpError(400, 'Dis ce qu’il faut changer dans le visuel.');
+      if (demande.instruction.length > 4000) throw new HttpError(400, 'La demande de modification est limitée à 4 000 caractères.');
+    }
+    if (action === 'creer' && 'modele' in b) demande.modele = modeleOuVide(b.modele);
+    if (!connexion()) throw new HttpError(400, 'Mocky n’est pas configuré : renseigne son adresse et une clé d’assistant dans Réglages, onglet Mocky.');
+    const post = lirePost(postId);
+    const reseaux = visuel === 'meta' ? ['Instagram', 'Facebook'] : ['LinkedIn'];
+    if (action === 'creer' && !post.plateformes.some((p) => reseaux.includes(p))) throw new HttpError(400, `Ce post n’est pas prévu sur ${VISUELS[visuel].libelle}.`);
+    const enCours = [...taches.values()].find((t) => t.etat === 'en_cours');
+    if (enCours) throw new HttpError(409, 'Mocky travaille déjà sur un visuel : attends qu’il ait fini (Mocky fait un design à la fois).');
+    const tache = { id: crypto.randomUUID(), postId: post.id, visuel, action, etat: 'en_cours', etape: 'Connexion à Mocky', message: '', debut: Date.now() };
+    taches.set(tache.id, tache);
+    const anciennes = [...taches.values()].sort((a, b2) => b2.debut - a.debut).slice(TACHES_GARDEES);
+    anciennes.forEach((t) => taches.delete(t.id));
+    executer(tache, demande).then(
+      () => {
+        tache.etat = 'fini';
+        tache.etape = '';
+        tache.message = action === 'modifier' ? 'Visuel modifié dans Mocky et mis à jour.' : action === 'reprendre' ? 'Visuel repris depuis Mocky.' : 'Visuel créé avec Mocky.';
+        tache.fin = Date.now();
+      },
+      (err) => {
+        tache.etat = 'echec';
+        tache.message = err instanceof HttpError ? err.message : erreurMocky(err).message;
+        tache.fin = Date.now();
+        if (!(err instanceof HttpError)) console.error('Mocky :', err && err.message);
+      },
+    );
+    return { status: 202, body: vueTache(tache) };
+  }
+
+  return { publics, modifier, tester, listerModeles, modelePour: (post) => modelePour(post), lancer, listerTaches, lireTache, VISUELS };
+}
+
+module.exports = { creerMocky, cleTheme };

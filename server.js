@@ -27,6 +27,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const ExcelJS = require('exceljs');
 const { creerAgent } = require('./agent.js');
+const { creerMocky } = require('./mocky.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -388,7 +389,12 @@ function enregistrerHistorique() {
   }
 }
 
-const fichiersDe = (element) => (element ? toutesLesPhotos(element.photos).map((f) => f.fichier) : []);
+/** Les fichiers Canva (.pptx) des visuels Mocky d'un post : rangés avec les images, et gardés comme elles tant que l'historique s'en sert. */
+const fichiersCanva = (element) =>
+  element && element.mocky && element.mocky.visuels
+    ? Object.values(element.mocky.visuels).map((v) => v && v.canva).filter((f) => typeof f === 'string' && /^[\w.-]+$/.test(f))
+    : [];
+const fichiersDe = (element) => (element ? [...toutesLesPhotos(element.photos).map((f) => f.fichier), ...fichiersCanva(element)] : []);
 const fichiersEntree = (e) => e.posts.flatMap((c) => [...fichiersDe(c.avant), ...fichiersDe(c.apres)]);
 
 /** Les entrées sorties de l'historique ne peuvent plus restaurer leurs images : on efface celles qui ne servent plus à rien. */
@@ -430,6 +436,7 @@ function decrireChangement(posts, evenements) {
   if (!c.apres) return `Suppression de ${titre(c)}`;
   if (c.avant.datePublication !== c.apres.datePublication) return `Déplacement de ${titre(c)}`;
   if (c.avant.statut !== c.apres.statut) return `Statut de ${titre(c)} : ${STATUT_LIBELLES[c.apres.statut]}`;
+  if (JSON.stringify(c.avant.mocky) !== JSON.stringify(c.apres.mocky)) return `Visuel Mocky de ${titre(c)}`;
   if (JSON.stringify(c.avant.photos) !== JSON.stringify(c.apres.photos)) return `Images de ${titre(c)}`;
   return `Modification de ${titre(c)}`;
 }
@@ -646,6 +653,12 @@ function copierPhotos(photos, idClone) {
   return { photos: out, crees };
 }
 
+/** Les images copiées restent, mais ne sont plus « le visuel Mocky » du nouveau post. */
+function retirerSourceMocky(photos) {
+  for (const slot of PHOTO_SLOTS) photos[slot] = photos[slot].map(({ source: _s, ...f }) => f);
+  return photos;
+}
+
 /** Une copie du post par date demandée. Les copies repartent en « idée à valider » : c'est l'utilisateur qui décide. */
 function clonerPost(id, body) {
   const source = db.posts.find((p) => p.id === id);
@@ -662,7 +675,9 @@ function clonerPost(id, body) {
       const idClone = newId('po');
       const { photos, crees } = copierPhotos(source.photos, idClone);
       fichiers.push(...crees);
-      clones.push({ ...source, id: idClone, datePublication: d, plateformes: [...source.plateformes], statut: 'idee', photos });
+      // Une copie n'est pas liée au projet Mocky de l'original : modifier son visuel ne doit pas toucher celui de l'autre post.
+      const { mocky: _projetMocky, ...sansMocky } = source;
+      clones.push({ ...sansMocky, id: idClone, datePublication: d, plateformes: [...source.plateformes], statut: 'idee', photos: retirerSourceMocky(photos) });
     }
     db.posts.push(...clones);
     saveDb();
@@ -729,6 +744,13 @@ function fusionnerPosts(body) {
   else photos.meta = pb.meta.length ? pb.meta : pa.meta;
   photos.linkedin = pb.linkedin.length ? pb.linkedin : pa.linkedin;
   fusion.photos = photos;
+  // Le lien Mocky suit les images gardées : un visuel dont le PNG a été écarté n'est plus celui du post.
+  const lienMocky = base.mocky || autre.mocky;
+  delete fusion.mocky;
+  if (lienMocky && lienMocky.visuels) {
+    const visuels = Object.fromEntries(Object.entries(lienMocky.visuels).filter(([slot, v]) => v && PHOTO_SLOTS.includes(slot) && photos[slot].some((f) => f.fichier === v.fichier)));
+    if (Object.keys(visuels).length) fusion.mocky = { ...lienMocky, visuels };
+  }
 
   // Les images écartées restent sur le disque tant que l'historique permet d'annuler la fusion.
   const avant = db.posts;
@@ -999,7 +1021,76 @@ async function appelerRoute(method, chemin, { body, query = {}, meta } = {}) {
   return resultat && resultat.status && resultat.body !== undefined ? resultat.body : resultat;
 }
 
-const agent = creerAgent({ dataDir: DATA_DIR, HttpError, appelerRoute, instantLocal, nomStructure });
+// `mocky` est créé plus bas : l'agent le lit au moment de s'en servir.
+const agent = creerAgent({ dataDir: DATA_DIR, HttpError, appelerRoute, instantLocal, nomStructure, mocky: () => mocky });
+
+/* ------------------------------------------------------------------ */
+/* Visuels Mocky                                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Range ce que Mocky a fait dans le post : le PNG prend la place du précédent visuel Mocky de ce réseau
+ * (ou se place en premier), le fichier Canva est gardé à côté. Une seule action de l'historique : Annuler revient au visuel d'avant.
+ */
+function appliquerVisuelMocky(postId, visuel, r) {
+  const info = lireImage(r.png);
+  if (!info || info.type !== 'image/png' || !info.largeur || !info.hauteur) throw new HttpError(502, 'Mocky n’a pas renvoyé une image PNG valide.');
+  if (r.png.length > PHOTO_MAX * 4) throw new HttpError(502, 'Le PNG reçu de Mocky est trop lourd.');
+  if (r.pptx.length < 4 || r.pptx.readUInt32BE(0) !== 0x504b0304) throw new HttpError(502, 'Le fichier Canva reçu de Mocky n’est pas un .pptx valide.');
+  const ecrits = [];
+  const ecrire = (fichier, octets) => {
+    const tmp = `${cheminPhoto(fichier)}.tmp`;
+    fs.writeFileSync(tmp, octets);
+    fs.renameSync(tmp, cheminPhoto(fichier));
+    ecrits.push(fichier);
+  };
+  try {
+    return avecHistorique(() => {
+      const post = db.posts.find((p) => p.id === postId);
+      if (!post) throw new HttpError(404, 'Ce post a été supprimé pendant que Mocky travaillait.');
+      post.photos = normaliserPhotos(post.photos);
+      const ancien = post.mocky && post.mocky.visuels && post.mocky.visuels[visuel];
+      const liste = post.photos[visuel];
+      const place = ancien ? liste.findIndex((f) => f.fichier === ancien.fichier) : -1;
+      if (place < 0 && liste.length >= PHOTOS_PAR_VISUEL) throw new HttpError(400, `Maximum ${PHOTOS_PAR_VISUEL} images par visuel : retire-en une pour accueillir celle de Mocky.`);
+      fs.mkdirSync(IMAGES_DIR, { recursive: true });
+      const fichier = nomFichierUnique(postId, visuel, 'png');
+      ecrire(fichier, r.png);
+      const canva = nomFichierUnique(postId, `${visuel}-canva`, 'pptx');
+      ecrire(canva, r.pptx);
+      const photo = { fichier, type: 'image/png', largeur: info.largeur, hauteur: info.hauteur, octets: r.png.length, source: 'mocky' };
+      post.photos[visuel] = place >= 0 ? liste.map((f, i) => (i === place ? photo : f)) : [photo, ...liste];
+      const precedents = (post.mocky && post.mocky.visuels) || {};
+      post.mocky = {
+        projet: r.projet,
+        lien: r.lienProjet,
+        modele: r.modele || '',
+        visuels: { ...precedents, [visuel]: { ecran: r.ecran, lien: r.lien || r.lienProjet, fichier, canva, nomCanva: r.nomCanva, date: new Date().toISOString() } },
+      };
+      saveDb();
+      return post;
+    }, { source: 'mocky' });
+  } catch (err) {
+    ecrits.forEach((f) => supprimerFichierPhoto({ fichier: f }));
+    throw err;
+  }
+}
+
+const mocky = creerMocky({
+  dataDir: DATA_DIR,
+  HttpError,
+  nomStructure,
+  lirePost: (id) => {
+    const post = db.posts.find((p) => p.id === id);
+    if (!post) throw new HttpError(404, 'Post introuvable.');
+    return cloneJson(post);
+  },
+  nomEvenement: (id) => {
+    const ev = db.evenements.find((e) => e.id === id);
+    return ev ? `${ev.nom} (${periodeFr(ev.dateDebut, ev.dateFin || ev.dateDebut)})` : '';
+  },
+  appliquer: appliquerVisuelMocky,
+});
 
 route('GET', /^\/api\/health$/, () => ({ ok: true }));
 
@@ -1016,6 +1107,33 @@ route('GET', /^\/api\/agent\/modeles$/, ({ query }) => agent.listerModeles(query
 route('POST', /^\/api\/agent\/tester$/, () => agent.tester(), SANS_HISTORIQUE);
 route('POST', /^\/api\/agent\/message$/, ({ body }) => agent.discuter(body), SANS_HISTORIQUE);
 route('POST', /^\/api\/agent\/confirmer$/, ({ body }) => agent.confirmer(body), SANS_HISTORIQUE);
+
+route('GET', /^\/api\/mocky\/reglages$/, () => mocky.publics());
+route('PUT', /^\/api\/mocky\/reglages$/, ({ body }) => mocky.modifier(body), SANS_HISTORIQUE);
+route('POST', /^\/api\/mocky\/tester$/, () => mocky.tester(), SANS_HISTORIQUE);
+route('GET', /^\/api\/mocky\/modeles$/, () => mocky.listerModeles());
+route('GET', /^\/api\/mocky\/taches$/, () => mocky.listerTaches());
+route('GET', /^\/api\/mocky\/taches\/([\w-]+)$/, ({ params }) => mocky.lireTache(params[0]));
+// Lance la création, la modification ou la reprise d'un visuel. La tâche enregistre le résultat elle-même, plus tard.
+route('POST', /^\/api\/posts\/([\w-]+)\/mocky$/, ({ params, body }) => mocky.lancer(params[0], body), SANS_HISTORIQUE);
+route('GET', /^\/api\/posts\/([\w-]+)\/mocky\/modele$/, ({ params }) => {
+  const post = db.posts.find((p) => p.id === params[0]);
+  if (!post) throw new HttpError(404, 'Post introuvable.');
+  return mocky.modelePour(post);
+});
+route('GET', /^\/api\/posts\/([\w-]+)\/canva\/(meta|linkedin)$/, ({ params }) => {
+  const post = db.posts.find((p) => p.id === params[0]);
+  if (!post) throw new HttpError(404, 'Post introuvable.');
+  const v = post.mocky && post.mocky.visuels && post.mocky.visuels[params[1]];
+  if (!v || !v.canva) throw new HttpError(404, 'Pas de fichier Canva pour ce visuel.');
+  let raw;
+  try {
+    raw = fs.readFileSync(cheminPhoto(v.canva));
+  } catch {
+    throw new HttpError(404, 'Fichier Canva introuvable sur le serveur.');
+  }
+  return { raw, type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', filename: v.nomCanva || `${post.datePublication}_${params[1]}_Canva.pptx` };
+});
 
 route('GET', /^\/api\/state$/, () => ({
   historique: etatHistorique(),

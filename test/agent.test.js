@@ -302,6 +302,23 @@ test('agent : comparaison ouverte, les posts sont lus sur le serveur et le surli
   assert.ok(!requetes.at(-1).body.tools.some((t) => t.name === 'surligner_differences'));
 });
 
+test('agent : les outils Mocky n’existent qu’une fois Mocky configuré, et lancent une tâche suivie par l’interface', async () => {
+  reponses = [claude(texte('Rien.'))];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Visuel' }] });
+  assert.ok(!requetes[0].body.tools.some((t) => t.name === 'creer_visuel_mocky'));
+  // Une adresse qui ne répond pas : la tâche échouera plus tard, mais elle est bien lancée et rendue à l'interface.
+  await api('PUT', '/api/mocky/reglages', { url: 'http://127.0.0.1:9', cle: 'mocky_ak_test' });
+  const p = await creerPost('Visuel Mocky');
+  requetes = [];
+  reponses = [claude(appel('creer_visuel_mocky', { id: p.id, visuel: 'meta' })), claude(texte('Lancé.'))];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Fais le visuel' }] });
+  assert.ok(requetes[0].body.tools.some((t) => t.name === 'creer_visuel_mocky'));
+  assert.equal(r.json.taches.length, 1);
+  assert.equal(r.json.taches[0].postId, p.id);
+  for (let i = 0; i < 50 && (await api('GET', '/api/mocky/taches')).json.some((t) => t.etat === 'en_cours'); i++) await new Promise((ok) => setTimeout(ok, 100));
+  await api('PUT', '/api/mocky/reglages', { url: '', cle: null });
+});
+
 test('agent : une clé refusée donne un message clair, pas un 401 qui redemanderait le jeton', async () => {
   reponses = [{ __statut: 401, type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }];
   const r = await api('POST', '/api/agent/tester', {});
