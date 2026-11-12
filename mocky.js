@@ -88,12 +88,12 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
 
   /* ------------------------------ réglages ------------------------------ */
 
-  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', themes: [], evenements: {}, formats: { meta: '', linkedin: '' }, redacteur: 'mocky', consignes: '' });
+  const defauts = () => ({ url: '', cle: '', modeleDefaut: '', themes: [], evenements: {}, formats: { meta: '', linkedin: '' }, redacteur: 'mocky', consignes: '', consignesModeles: {} });
 
   function lire() {
     try {
       const f = JSON.parse(fs.readFileSync(FICHIER, 'utf8'));
-      return { ...defauts(), ...f, formats: { ...defauts().formats, ...(f.formats || {}) }, themes: Array.isArray(f.themes) ? f.themes : [], evenements: f.evenements && typeof f.evenements === 'object' ? f.evenements : {} };
+      return { ...defauts(), ...f, consignesModeles: f.consignesModeles && typeof f.consignesModeles === 'object' ? f.consignesModeles : {}, formats: { ...defauts().formats, ...(f.formats || {}) }, themes: Array.isArray(f.themes) ? f.themes : [], evenements: f.evenements && typeof f.evenements === 'object' ? f.evenements : {} };
     } catch {
       return defauts();
     }
@@ -165,6 +165,16 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
     if ('consignes' in body) {
       if (typeof body.consignes !== 'string' || body.consignes.length > CONSIGNES_MAX) throw new HttpError(400, `Les consignes visuelles sont limitées à ${CONSIGNES_MAX.toLocaleString('fr-FR')} caractères.`);
       r.consignes = body.consignes.trim();
+    }
+    if ('consignesModeles' in body) {
+      const c = body.consignesModeles;
+      if (!c || typeof c !== 'object' || Array.isArray(c)) throw new HttpError(400, 'Champ « consignesModeles » : un objet { identifiant du modèle: consignes }.');
+      r.consignesModeles = {};
+      for (const [id, texte] of Object.entries(c).slice(0, 100)) {
+        if (!MODELE_RE.test(id)) throw new HttpError(400, `Identifiant de modèle invalide : ${id.slice(0, 40)}`);
+        if (typeof texte !== 'string' || texte.length > CONSIGNES_MAX) throw new HttpError(400, `Les consignes d’un modèle sont limitées à ${CONSIGNES_MAX.toLocaleString('fr-FR')} caractères.`);
+        if (texte.trim()) r.consignesModeles[id] = texte.trim();
+      }
     }
     if ('themes' in body) {
       if (!Array.isArray(body.themes) || body.themes.length > 100) throw new HttpError(400, 'Champ « themes » : une liste de 100 règles au plus.');
@@ -362,7 +372,16 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
    * Quand Mocky attend le code (moteur « client ») : l'agent de Calendy l'écrit à partir des règles de Mocky, des
    * consignes visuelles et de la consigne de copie, puis le renvoie. Une erreur de rendu revient corriger CETTE erreur.
    */
-  function ecrivain(r0) {
+  /**
+   * Les consignes d'un visuel : celles du modèle utilisé d'abord (un modèle carré Instagram et un modèle LinkedIn
+   * n'ont pas les mêmes règles), puis les consignes générales, valables pour tous.
+   */
+  function consignesPour(modele, r = lire()) {
+    const propres = modele && r.consignesModeles[modele];
+    return [propres ? `Pour ce modèle :\n${propres}` : '', r.consignes ? (propres ? `Pour tous les visuels :\n${r.consignes}` : r.consignes) : ''].filter(Boolean).join('\n\n');
+  }
+
+  function ecrivain(r0, modele) {
     const reglages = lire();
     const historique = [];
     let contrat = null;
@@ -375,7 +394,8 @@ function creerMocky({ dataDir, HttpError, lirePost, nomEvenement, appliquer, nom
       } else {
         historique.push({ role: 'user', content: `Le code envoyé ne s'affiche pas. Erreur de rendu :\n${String(r.renderError || r.texte || '').slice(0, 2000)}\n\nCorrige CETTE erreur seulement, sans rien changer d'autre, et renvoie le composant complet.` });
       }
-      const systeme = [contrat.regles, reglages.consignes ? `CONSIGNES VISUELLES DE L'UTILISATEUR (à respecter) :\n${reglages.consignes}` : '', CONSIGNE_COPIE].filter(Boolean).join('\n\n');
+      const consignes = consignesPour(modele, reglages);
+      const systeme = [contrat.regles, consignes ? `CONSIGNES VISUELLES DE L'UTILISATEUR (à respecter) :\n${consignes}` : '', CONSIGNE_COPIE].filter(Boolean).join('\n\n');
       const code = await ecrireCode({ systeme, messages: historique });
       if (!code.trim()) throw new HttpError(ERREUR_SERVICE, 'L’agent IA n’a pas écrit de code pour ce visuel.');
       historique.push({ role: 'assistant', content: code });
@@ -392,7 +412,7 @@ Ne commente ni le contenu, ni la photo, ni les couleurs choisies par le modèle.
 Si rien n'est à corriger, réponds exactement : OK
 Sinon, réponds par une consigne de modification pour un designer, courte et précise, en liste, qui dit quoi changer et où (par exemple : « Mets les trois pastilles à la même largeur que la plus large, texte sur une ligne »). Pas d'autre texte.`;
 
-  async function verifier(m, fini, tache) {
+  async function verifier(m, fini, tache, modeleId) {
     if (!ecrireCode) return null;
     let lien = null;
     let capture = fini.images && fini.images[0];
@@ -412,7 +432,7 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
         return lien; // une vérification impossible ne doit pas coûter le visuel
       }
       if (!capture || !modele) return lien;
-      const consignes = lire().consignes;
+      const consignes = consignesPour(modeleId);
       const avis = await ecrireCode({
         systeme: [CONSIGNE_VERIFICATION, consignes ? `Consignes visuelles de l'utilisateur :\n${consignes}` : ''].filter(Boolean).join('\n\n'),
         messages: [{ role: 'user', content: [{ type: 'text', text: 'MODÈLE :' }, { type: 'image', ...modele }, { type: 'text', text: 'VISUEL :' }, { type: 'image', ...capture }, { type: 'text', text: 'Ce visuel a-t-il des défauts de mise en forme à corriger ?' }] }],
@@ -424,20 +444,20 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
         screen_id: fini.screenId,
         instruction: `Corrige uniquement ces défauts de mise en forme, sans changer les textes, les couleurs ni le reste du visuel :\n${avis.trim().slice(0, 3500)}`,
       });
-      const corrige = await attendre(m, r, tache);
+      const corrige = await attendre(m, r, tache, modeleId);
       lien = corrige.link || lien;
       capture = (corrige.images && corrige.images[0]) || null;
     }
     return lien;
   }
 
-  async function attendre(m, reponse, tache) {
+  async function attendre(m, reponse, tache, modele = '') {
     const limite = Date.now() + ATTENTE_MAX;
     let r = reponse;
     let ecrire = null;
     while (r.status !== 'done') {
       if (r.status === 'awaiting_code' && lire().redacteur === 'calendy') {
-        ecrire = ecrire || ecrivain(r);
+        ecrire = ecrire || ecrivain(r, modele);
         tache.etape = 'L’agent IA écrit le visuel';
         const code = await ecrire(r);
         tache.etape = 'Mocky vérifie le code';
@@ -479,7 +499,8 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
       let lien;
       let modele = (post.mocky && post.mocky.modele) || '';
       if (action === 'creer') {
-        const choix = demande.modele !== undefined ? { modele: demande.modele } : modelePour(post);
+        // Refaire un visuel dans le projet du post : le modèle reste celui du projet, même si les règles ont changé depuis.
+        const choix = demande.modele !== undefined ? { modele: demande.modele } : post.mocky && post.mocky.projet ? { modele: post.mocky.modele || '' } : modelePour(post);
         modele = choix.modele;
         const reglages = lire();
         const commun = {
@@ -491,7 +512,7 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
           // « client » : Mocky prépare tout et c'est l'agent de Calendy qui écrit le code (voir ecrivain).
           engine: reglages.redacteur === 'calendy' ? 'client' : 'mocky',
           ...(reglages.formats[visuel] ? { page_format: reglages.formats[visuel] } : {}),
-          ...(reglages.consignes ? { style: reglages.consignes.slice(0, 300) } : {}),
+          ...(consignesPour(modele, reglages) ? { style: consignesPour(modele, reglages).slice(0, 300) } : {}),
           ...(post.imageIdee ? { picture_subject: post.imageIdee.slice(0, 300) } : {}),
         };
         let r = null;
@@ -511,11 +532,11 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
           tache.etape = modele ? 'Nouveau projet à partir du modèle' : 'Nouveau projet';
           r = await m.outil('create_design', { ...commun, project_name: `${post.datePublication} · ${post.titre}`.slice(0, 120), ...(modele ? { template_id: modele } : {}) });
         }
-        const fini = await attendre(m, r, tache);
+        const fini = await attendre(m, r, tache, modele);
         ({ projectId, screenId } = { projectId: fini.projectId, screenId: fini.screenId });
         lien = fini.link;
         // Comme Claude Desktop qui « contrôle la capture » : l'agent compare le visuel au modèle et fait corriger.
-        if (reglages.redacteur === 'calendy') lien = (await verifier(m, fini, tache)) || lien;
+        if (reglages.redacteur === 'calendy') lien = (await verifier(m, fini, tache, modele)) || lien;
       } else {
         if (!existant || !post.mocky.projet) throw new HttpError(409, 'Ce visuel n’a pas encore été créé avec Mocky.');
         projectId = post.mocky.projet;
@@ -556,7 +577,8 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
     if (action === 'creer' && !post.plateformes.some((p) => reseaux.includes(p))) throw new HttpError(400, `Ce post n’est pas prévu sur ${VISUELS[visuel].libelle}.`);
     const enCours = [...taches.values()].find((t) => t.etat === 'en_cours');
     if (enCours) throw new HttpError(409, 'Mocky travaille déjà sur un visuel : attends qu’il ait fini (Mocky fait un design à la fois).');
-    const tache = { id: crypto.randomUUID(), postId: post.id, visuel, action, etat: 'en_cours', etape: 'Connexion à Mocky', message: '', debut: Date.now() };
+    const refait = action === 'creer' && Boolean(post.mocky && post.mocky.visuels && post.mocky.visuels[visuel]);
+    const tache = { id: crypto.randomUUID(), postId: post.id, visuel, action, refait, etat: 'en_cours', etape: 'Connexion à Mocky', message: '', debut: Date.now() };
     taches.set(tache.id, tache);
     const anciennes = [...taches.values()].sort((a, b2) => b2.debut - a.debut).slice(TACHES_GARDEES);
     anciennes.forEach((t) => taches.delete(t.id));
@@ -564,7 +586,7 @@ Sinon, réponds par une consigne de modification pour un designer, courte et pr�
       () => {
         tache.etat = 'fini';
         tache.etape = '';
-        tache.message = action === 'modifier' ? 'Visuel modifié dans Mocky et mis à jour.' : action === 'reprendre' ? 'Image du post mise à jour depuis Mocky.' : 'Visuel créé avec Mocky.';
+        tache.message = action === 'modifier' ? 'Visuel modifié dans Mocky et mis à jour.' : action === 'reprendre' ? 'Image du post mise à jour depuis Mocky.' : tache.refait ? 'Visuel refait avec Mocky.' : 'Visuel créé avec Mocky.';
         tache.fin = Date.now();
       },
       (err) => {
