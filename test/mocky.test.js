@@ -65,7 +65,8 @@ function fauxMocky() {
   server.registerTool('export_screen', { inputSchema: { project_id: z.string(), screen_id: z.string(), format: z.string() } }, async (args) => {
     garder('export_screen')(args);
     const ext = args.format === 'png' ? 'png' : 'pptx';
-    return ok({ download: `http://127.0.0.1:${portMocky}/fichier.${ext}`, filename: ext === 'png' ? 'Post.png' : 'Post - Canva.pptx', format: args.format });
+    // Comme le vrai Mocky : un lien signé sur SON adresse publique, que le serveur de Calendy ne joint pas forcément.
+    return ok({ download: `https://mocky.public.invalid/mcp-export/${'a'.repeat(64)}.${ext}?e=1&s=sig`, filename: ext === 'png' ? 'Post.png' : 'Post - Canva.pptx', format: args.format });
   });
   return server;
 }
@@ -73,8 +74,8 @@ function fauxMocky() {
 before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'calendy-mocky-'));
   mocky = http.createServer(async (req, res) => {
-    if (req.url === '/fichier.png') { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(PNG); }
-    if (req.url === '/fichier.pptx') { res.writeHead(200); return res.end(PPTX); }
+    if (req.url.startsWith('/mcp-export/') && req.url.includes('.png?')) { res.writeHead(200, { 'Content-Type': 'image/png' }); return res.end(PNG); }
+    if (req.url.startsWith('/mcp-export/') && req.url.includes('.pptx?')) { res.writeHead(200); return res.end(PPTX); }
     if (req.url !== '/mcp' || req.method !== 'POST') { res.writeHead(404); return res.end(); }
     if (req.headers.authorization !== `Bearer ${CLE}`) { res.writeHead(401, { 'Content-Type': 'application/json' }); return res.end('{"error":"invalid_token"}'); }
     const morceaux = [];
@@ -161,6 +162,8 @@ test('créer un visuel : un projet par post depuis le modèle, PNG dans les imag
 
   const post = (await api('GET', `/api/posts/${p.id}`)).json;
   assert.equal(post.mocky.projet, 'p-post');
+  // Le lien montré est celui que Mocky donne (son adresse publique), pas l'adresse des réglages.
+  assert.equal(post.mocky.lien, 'http://mocky.test/p/p-post');
   assert.equal(post.photos.meta.length, 1);
   assert.equal(post.photos.meta[0].type, 'image/png');
   assert.equal(post.photos.meta[0].source, 'mocky');
@@ -202,6 +205,24 @@ test('créer un visuel : un projet par post depuis le modèle, PNG dans les imag
   const copie = (await api('POST', `/api/posts/${p.id}/cloner`, { dates: ['2030-11-01'] })).json.clones[0];
   assert.equal(copie.mocky, undefined);
   assert.equal(copie.photos.meta[0].source, undefined);
+});
+
+test('un Mocky qui ne répond pas donne vite une erreur claire, en JSON', async () => {
+  // Accepte la connexion et ne répond jamais : le cas qui renvoyait la page HTML du proxy devant Calendy.
+  const muet = http.createServer(() => {});
+  await new Promise((r) => muet.listen(0, '127.0.0.1', r));
+  try {
+    await api('PUT', '/api/mocky/reglages', { url: `http://127.0.0.1:${muet.address().port}` });
+    const debut = Date.now();
+    const r = await api('POST', '/api/mocky/tester', {});
+    assert.equal(r.status, 504);
+    assert.match(r.json.error, /délai dépassé/);
+    assert.ok(Date.now() - debut < 30000, 'avant le délai habituel d’un proxy');
+  } finally {
+    muet.closeAllConnections();
+    muet.close();
+    await api('PUT', '/api/mocky/reglages', { url: `http://127.0.0.1:${portMocky}/` });
+  }
 });
 
 test('un refus de Mocky est rapporté dans la tâche', async () => {

@@ -780,7 +780,13 @@ async function request(method, path, body) {
 async function api(method, path, body) {
   const res = await request(method, path, body);
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Une page HTML à la place du JSON : c'est le proxy devant Calendy qui a répondu (délai dépassé, serveur redémarré…).
+    throw new Error(`Le serveur a répondu par une page d’erreur (code ${res.status}) au lieu de Calendy : la demande a sans doute pris trop de temps, ou le serveur redémarre. Réessaie dans un instant.`);
+  }
   if (!res.ok) throw new Error((data && data.error) || `Erreur ${res.status}`);
   return data;
 }
@@ -2870,7 +2876,7 @@ function afficherReglagesMocky(main, entete) {
     <form class="reglages" id="reglagesMocky" data-reglages="mocky" novalidate>
       <p class="hint">Calendy demande à Mocky le visuel d’un post : un nouveau projet par post, à partir d’un modèle de projet Mocky. Le PNG rejoint les images du post, le fichier Canva (.pptx) se télécharge depuis la fiche.</p>
       <div class="f"><label class="f"><span>Adresse de Mocky</span><input type="text" name="url" maxlength="300" spellcheck="false" placeholder="https://mocky.exemple.fr" value="${esc(m.url || '')}"${urlEnv ? ' disabled' : ''}></label>
-        <p class="hint">${urlEnv ? 'Fixée par la variable MOCKY_URL du serveur.' : 'L’adresse où tu ouvres Mocky. L’administrateur de Mocky doit avoir activé les assistants (Admin → Assistants (MCP)) et les clés d’assistant.'}</p></div>
+        <p class="hint">${urlEnv ? 'Fixée par la variable MOCKY_URL du serveur.' : 'L’adresse où tu ouvres Mocky (sans /mcp). Si Calendy et Mocky tournent sur la même machine (Docker, Coolify) et que la connexion échoue, mets l’adresse interne de Mocky, par exemple http://mocky:8787 : les liens « Ouvrir dans Mocky » garderont l’adresse publique. L’administrateur de Mocky doit avoir activé les assistants (Admin → Assistants (MCP)) et les clés d’assistant.'}</p></div>
       <div class="f"><label class="f"><span>Clé d’assistant Mocky</span><input type="password" name="cle" autocomplete="off" spellcheck="false" placeholder="${cleEnv ? '' : m.cle.definie ? '•••••••• (laisser vide pour conserver)' : 'mocky_ak_…'}"${cleEnv ? ' disabled' : ''}></label>
         <p class="hint">${cleEnv ? 'La clé vient de la variable MOCKY_API_KEY du serveur.' : 'Dans Mocky : Réglages → Assistants connectés → Clés d’assistant, niveau « Lecture + écriture ». Elle reste sur le serveur de Calendy et n’est jamais renvoyée au navigateur.'}</p>
         <div><button type="button" class="btn small" data-action="mk-retirer-cle"${m.cle.source === 'reglages' ? '' : ' hidden'}>Retirer la clé enregistrée</button></div></div>
