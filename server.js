@@ -17,6 +17,8 @@
  *   CALENDY_NO_SEED=1  ne pas charger seed.json au premier démarrage
  *   ANTHROPIC_API_KEY, OPENROUTER_API_KEY  clés de l'agent IA (prioritaires sur celles saisies dans les réglages)
  *   CALENDY_HISTORIQUE_MAX  nombre d'actions gardées pour Annuler / Rétablir (défaut 100 ; 0 désactive l'annulation)
+ *   CALENDY_PUBLIC_URL  adresse publique de Calendy (par exemple https://calendy.mondomaine.fr), pour la connexion
+ *                  avec Kosmy Board ; à défaut, elle est déduite de la requête (Host et X-Forwarded-Proto)
  *
  * Les photos des posts sont rangées dans DATA_DIR/images (à sauvegarder avec data.json).
  */
@@ -28,6 +30,7 @@ const crypto = require('node:crypto');
 const ExcelJS = require('exceljs');
 const { creerAgent } = require('./agent.js');
 const { creerMocky } = require('./mocky.js');
+const { creerKosmyBoard, OidcErreur, LOGIN_PATH, CALLBACK_PATH } = require('./kosmy-board.js');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -1110,6 +1113,8 @@ const mocky = creerMocky({
   appliquer: appliquerVisuelMocky,
 });
 
+const kosmy = creerKosmyBoard({ dataDir: DATA_DIR, HttpError, jetonDefini: Boolean(TOKEN) });
+
 route('GET', /^\/api\/health$/, () => ({ ok: true }));
 
 /* Historique et agent IA : ces routes ne sont pas elles-mêmes des modifications à mémoriser */
@@ -1354,11 +1359,15 @@ function jetonRecu(req) {
   return nettoyerJeton(given);
 }
 
+function jetonEgal(donne, attendu) {
+  const a = crypto.createHash('sha256').update(String(donne)).digest();
+  const b = crypto.createHash('sha256').update(attendu).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 function tokenOk(req) {
   if (!TOKEN) return true;
-  const a = crypto.createHash('sha256').update(jetonRecu(req)).digest();
-  const b = crypto.createHash('sha256').update(TOKEN).digest();
-  const ok = crypto.timingSafeEqual(a, b);
+  const ok = jetonEgal(jetonRecu(req), TOKEN);
   // Aide au diagnostic : on journalise la longueur (jamais la valeur) d'un jeton refusé.
   if (!ok) {
     const recu = jetonRecu(req);
@@ -1407,6 +1416,116 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'DENY',
 };
 
+/* ------------------------------------------------------------------ */
+/* Connexion avec Kosmy Board                                         */
+/* ------------------------------------------------------------------ */
+
+const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+/** Adresse publique de Calendy : CALENDY_PUBLIC_URL, sinon déduite de la requête (derrière un proxy, X-Forwarded-Proto). */
+function adressePublique(req) {
+  const fixee = (process.env.CALENDY_PUBLIC_URL || '').trim().replace(/\/+$/, '');
+  if (fixee) return fixee;
+  const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return `${proto === 'https' ? 'https' : 'http'}://${req.headers.host || `localhost:${PORT}`}`;
+}
+
+/** Petite page HTML (erreur de connexion), au style de Calendy. */
+function pageKosmy(res, status, titre, message, { lien = '/', libelle = 'Retour à Calendy', cookies = [] } = {}) {
+  const html = Buffer.from(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escHtml(titre)} · Calendy</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box;font:17px/1.55 "Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;color:#1B2A41;background:radial-gradient(900px 440px at 88% -60px,#D5E4FB 0,transparent 72%) no-repeat,radial-gradient(760px 400px at 6% -60px,#FFE7BF 0,transparent 72%) no-repeat,#F8F5EF}
+main{max-width:520px;background:#fff;border-radius:20px;padding:28px;box-shadow:0 4px 10px rgba(27,42,65,.07),0 12px 32px rgba(27,42,65,.1)}
+h1{margin:0 0 10px;font-size:23px;color:#2353B0}
+p{margin:0 0 18px}
+a{display:inline-flex;padding:9px 16px;border-radius:10px;background:linear-gradient(180deg,#2C62C6,#2353B0);color:#fff;font-weight:700;text-decoration:none}
+</style></head><body><main><h1>${escHtml(titre)}</h1><p>${escHtml(message)}</p><a href="${escHtml(lien)}">${escHtml(libelle)}</a></main></body></html>`);
+  res.writeHead(status, {
+    ...SECURITY_HEADERS,
+    'Content-Type': 'text/html; charset=utf-8',
+    'Content-Length': html.length,
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+    ...(cookies.length ? { 'Set-Cookie': cookies } : {}),
+  });
+  res.end(html);
+}
+
+function redirection(res, vers, cookies = []) {
+  res.writeHead(303, { ...SECURITY_HEADERS, Location: vers, 'Cache-Control': 'no-store', ...(cookies.length ? { 'Set-Cookie': cookies } : {}) });
+  res.end();
+}
+
+/** GET /auth/kosmy-board/login (bouton de Calendy, ou « Ouvrir » du Board avec iss et target_link_uri) et /callback. */
+async function parcoursKosmy(req, res, pathname, query) {
+  const base = adressePublique(req);
+  try {
+    if (pathname === LOGIN_PATH) {
+      const { url, cookie } = await kosmy.demarrer({ base, iss: query.iss, cible: query.target_link_uri, mode: 'connexion' });
+      return redirection(res, url, [cookie]);
+    }
+    const r = await kosmy.terminer({ base, query, req });
+    return redirection(res, r.mode === 'relier' ? '/?kosmy=relie' : r.cible, r.cookies);
+  } catch (err) {
+    if (!(err instanceof OidcErreur)) throw err;
+    if (err.code === 'non_relie') {
+      return pageKosmy(res, 403, 'Compte non relié', `${err.message} Ouvre Calendy avec le jeton d’accès, puis Réglages → Kosmy Board → « Relier à Kosmy Board ».`, { libelle: 'Se connecter avec le jeton' });
+    }
+    if (!['state', 'refuse', 'inactif'].includes(err.code)) console.warn(`Connexion Kosmy Board refusée (${err.code}) : ${err.message}`);
+    return pageKosmy(res, err.code === 'refuse' ? 403 : 400, 'Connexion impossible', err.message);
+  }
+}
+
+/** Routes /api/kosmy-board/* et /api/session (hors de portée de l'agent IA) ; renvoie true si la requête a été traitée. */
+async function apiKosmy(req, res, pathname, acces) {
+  if (!pathname.startsWith('/api/kosmy-board/') && pathname !== '/api/session') return false;
+  const base = adressePublique(req);
+  if (req.method === 'GET' && pathname === '/api/session') {
+    send(res, 200, { acces: acces.type, compte: acces.compte || null, kosmyBoard: kosmy.actif() }, SECURITY_HEADERS);
+    return true;
+  }
+  if (req.method === 'POST' && pathname === '/api/kosmy-board/deconnexion') {
+    send(res, 200, { ok: true }, { ...SECURITY_HEADERS, 'Set-Cookie': kosmy.cookieDeconnexion(base) });
+    return true;
+  }
+  // Le reste règle la connexion unique : réservé au jeton, jamais à une session ouverte par le Board.
+  if (acces.type !== 'jeton') {
+    throw new HttpError(403, acces.type === 'ouvert' ? 'Définis d’abord CALENDY_TOKEN sur le serveur.' : 'Réservé à une connexion avec le jeton d’accès de Calendy.');
+  }
+  const corps = async () => {
+    if (!/^application\/json/i.test(req.headers['content-type'] || '')) throw new HttpError(415, 'Content-Type application/json requis.');
+    return readBody(req);
+  };
+  if (req.method === 'GET' && pathname === '/api/kosmy-board/reglages') {
+    send(res, 200, kosmy.publics(base), SECURITY_HEADERS);
+    return true;
+  }
+  if (req.method === 'PUT' && pathname === '/api/kosmy-board/reglages') {
+    send(res, 200, kosmy.modifier(await corps(), base), SECURITY_HEADERS);
+    return true;
+  }
+  if (req.method === 'POST' && pathname === '/api/kosmy-board/relier') {
+    await corps();
+    try {
+      const { url, cookie } = await kosmy.demarrer({ base, cible: '/', mode: 'relier' });
+      send(res, 200, { url }, { ...SECURITY_HEADERS, 'Set-Cookie': cookie });
+    } catch (err) {
+      if (err instanceof OidcErreur) throw new HttpError(err.code === 'inactif' ? 409 : 424, err.message);
+      throw err;
+    }
+    return true;
+  }
+  if (req.method === 'POST' && pathname === '/api/kosmy-board/retirer') {
+    const body = await corps();
+    // Retirer un compte de la liste demande de ressaisir le jeton, comme un mot de passe.
+    if (!jetonEgal(nettoyerJeton(body.jeton), TOKEN)) throw new HttpError(403, 'Jeton d’accès incorrect : le compte n’a pas été retiré.');
+    send(res, 200, kosmy.retirer(String(body.sub || ''), base), SECURITY_HEADERS);
+    return true;
+  }
+  throw new HttpError(404, 'Route inconnue.');
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const pathname = url.pathname.replace(/\/+$/, '') || '/';
@@ -1429,6 +1548,8 @@ async function handle(req, res) {
     return res.end();
   }
 
+  if (req.method === 'GET' && (pathname === LOGIN_PATH || pathname === CALLBACK_PATH)) return parcoursKosmy(req, res, pathname, query);
+
   if (!pathname.startsWith('/api/')) return send(res, 404, { error: 'Introuvable.' }, SECURITY_HEADERS);
 
   // Anti-CSRF : un navigateur qui appelle l'API depuis un autre site envoie un en-tête Origin différent de l'hôte.
@@ -1439,9 +1560,18 @@ async function handle(req, res) {
     if (origineHote !== req.headers.host) return send(res, 403, { error: 'Origine non autorisée.' }, SECURITY_HEADERS);
   }
 
+  // Ce que la page de connexion a besoin de savoir sans être connectée : la connexion par le Board est-elle proposée ?
+  if (req.method === 'GET' && pathname === '/api/kosmy-board/etat') return send(res, 200, { actif: kosmy.actif() }, SECURITY_HEADERS);
+
+  // Accès : le jeton (accès complet), sinon une session ouverte par Kosmy Board (le calendrier, pas les réglages de connexion).
+  let acces = { type: TOKEN ? 'jeton' : 'ouvert' };
   if (pathname !== '/api/health' && !tokenOk(req)) {
-    return send(res, 401, { error: 'Jeton d’accès manquant ou invalide.' }, SECURITY_HEADERS);
+    const compte = kosmy.session(req);
+    if (!compte) return send(res, 401, { error: 'Jeton d’accès manquant ou invalide.' }, SECURITY_HEADERS);
+    acces = { type: 'kosmy', compte };
   }
+
+  if (await apiKosmy(req, res, pathname, acces)) return;
 
   // Les posts « Planifié » arrivés à échéance passent en « Publié » avant toute lecture ou écriture : on ne voit jamais un état périmé.
   if (pathname !== '/api/health') publierPostsEchus();
