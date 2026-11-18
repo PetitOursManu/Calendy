@@ -343,3 +343,60 @@ test('agent OpenRouter : boucle d’outils au format OpenAI', async () => {
   assert.equal((await api('GET', `/api/posts/${p.id}`)).json.statut, 'valide');
   await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
 });
+
+/* ---------- internet ---------- */
+
+test('agent Claude : recherche et lecture web proposées selon le réglage et le modèle', async () => {
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  const web = requetes[0].body.tools.filter((t) => t.type);
+  assert.deepEqual(web.map((t) => t.type), ['web_search_20250305', 'web_fetch_20250910'], 'variantes de base pour Haiku');
+  assert.equal(web[0].user_location.country, 'FR');
+  assert.match(JSON.stringify(requetes[0].body.system), /Internet : tu peux chercher/);
+
+  await api('PUT', '/api/agent/reglages', { modeles: { anthropic: 'claude-opus-5-5' } });
+  requetes = [];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  assert.deepEqual(requetes[0].body.tools.filter((t) => t.type).map((t) => t.type), ['web_search_20260209', 'web_fetch_20260209']);
+
+  await api('PUT', '/api/agent/reglages', { modeles: { anthropic: 'claude-haiku-5-5' }, permissions: { internet: false } });
+  assert.equal((await api('GET', '/api/agent/reglages')).json.permissions.internet, false);
+  requetes = [];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  assert.ok(!requetes[0].body.tools.some((t) => t.type), 'aucun outil web');
+  assert.doesNotMatch(JSON.stringify(requetes[0].body.system), /Internet : tu peux chercher/);
+  await api('PUT', '/api/agent/reglages', { permissions: { internet: true } });
+});
+
+test('agent Claude : reprend après pause_turn, recolle le texte cité et renvoie les sources', async () => {
+  const recherche = { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: { query: 'Semaine du Goût 2030 dates' } };
+  const resultats = { type: 'web_search_tool_result', tool_use_id: 'srv1', content: [{ type: 'web_search_result', url: 'https://www.legout.com/', title: 'Semaine du Goût', encrypted_content: 'x' }] };
+  const cite = (t, url, title) => ({ type: 'text', text: t, citations: [{ type: 'web_search_result_location', url, title, cited_text: t, encrypted_index: 'y' }] });
+  reponses = [
+    { ...claude(texte('Je vérifie.'), recherche), stop_reason: 'pause_turn' },
+    claude(resultats, texte('La Semaine du Goût 2030 a lieu '), cite('du 14 au 20 octobre', 'https://www.legout.com/#dates', 'Semaine du Goût'), texte(' selon le site officiel.')),
+  ];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Vérifie les dates' }] });
+  assert.equal(r.status, 200);
+  assert.equal(requetes.length, 2);
+  assert.equal(requetes[1].body.messages.at(-1).role, 'assistant', 'le fil est renvoyé tel quel, sans message « continue »');
+  assert.equal(r.json.reponse, 'Je vérifie.\n\nLa Semaine du Goût 2030 a lieu du 14 au 20 octobre selon le site officiel.');
+  assert.deepEqual(r.json.sources, [{ url: 'https://www.legout.com/', titre: 'Semaine du Goût' }]);
+});
+
+test('agent OpenRouter : recherche_web passe par le greffon web et renvoie les sources', async () => {
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test' }, modeles: { openrouter: 'anthropic/claude-test' } });
+  reponses = [
+    { choices: [{ finish_reason: 'tool_calls', message: { content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'recherche_web', arguments: JSON.stringify({ question: 'Dates DuoDay 2030' }) } }] } }] },
+    { choices: [{ finish_reason: 'stop', message: { content: 'Le DuoDay 2030 a lieu le 21 novembre.', annotations: [{ type: 'url_citation', url_citation: { url: 'https://www.duoday.fr/', title: 'DuoDay' } }, { type: 'url_citation', url_citation: { url: 'javascript:alert(1)', title: 'piège' } }] } }] },
+    { choices: [{ finish_reason: 'stop', message: { content: 'Confirmé : 21 novembre (duoday.fr).' } }] },
+  ];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Vérifie le DuoDay' }] });
+  assert.equal(r.status, 200);
+  assert.ok(requetes[0].body.tools.some((t) => t.function.name === 'recherche_web'));
+  assert.ok(!requetes[0].body.plugins, 'pas de recherche à chaque échange');
+  assert.deepEqual(requetes[1].body.plugins, [{ id: 'web', max_results: 5 }]);
+  assert.match(requetes[2].body.messages.at(-1).content, /https:\/\/www\.duoday\.fr\//);
+  assert.equal(r.json.reponse, 'Confirmé : 21 novembre (duoday.fr).');
+  assert.deepEqual(r.json.sources, [{ url: 'https://www.duoday.fr/', titre: 'DuoDay' }], 'adresses http(s) seulement');
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
+});
