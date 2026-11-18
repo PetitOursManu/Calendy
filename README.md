@@ -197,7 +197,29 @@ Au premier accès, la page demande le jeton et le garde dans le navigateur. Le c
 
 Au démarrage, les journaux du conteneur indiquent `Jeton d'accès actif : N caractères` (jamais la valeur). Le serveur ignore les espaces, retours à la ligne et guillemets qui entoureraient le jeton. Si la page répond « jeton refusé », compare ce nombre avec la longueur du jeton collé ; un refus écrit aussi `Jeton refusé : X caractères reçus, Y attendus` dans les journaux. Après avoir modifié la variable, il faut **redéployer** l'application. Évite `$` et `#` dans le jeton (certains hébergeurs les interprètent) : `openssl rand -hex 24` ne produit que des chiffres et des lettres.
 
-Sauvegarde : copie `data.json` **et le dossier `images`** du volume. `historique.json` (annulations) et `agent.json` (réglages et clé de l'agent) y sont aussi ; ne partage pas ce dernier.
+Sauvegarde : copie `data.json` **et le dossier `images`** du volume. `historique.json` (annulations), `agent.json` (réglages et clé de l'agent) et `kosmy-board.json` (connexion avec Kosmy Board, secret client compris) y sont aussi ; ne partage pas ces deux derniers.
+
+## Se connecter avec Kosmy Board
+
+Calendy n'a pas de comptes : l'accès complet passe par le jeton `CALENDY_TOKEN`. Avec [Kosmy Board](https://github.com/PetitOursManu/Kosmy-Board), tu peux en plus admettre des **comptes Kosmy Board** : ils ouvrent Calendy depuis leur Board (« Ouvrir ») ou avec le bouton « Se connecter avec Kosmy Board » de la page de connexion, sans connaître le jeton. Calendy est alors client OpenID Connect du Board.
+
+Mise en place (il faut que `CALENDY_TOKEN` soit défini : sans jeton, Calendy est ouvert à tous et la connexion unique reste inactive) :
+
+1. Dans Kosmy Board, ajoute l'espace Calendy avec l'adresse de ton instance, puis **Modifier → Connexion unique** et active-la. Les adresses de retour (`{adresse}/auth/kosmy-board/callback`) et de lancement (`{adresse}/auth/kosmy-board/login`) sont déjà remplies ; Calendy les affiche aussi, avec un bouton pour les copier.
+2. Dans Calendy, connecté avec le jeton : **Réglages → Kosmy Board**. Colle l'**émetteur**, l'**identifiant client** et le **secret client** affichés par le Board, puis enregistre. Le secret n'est jamais réaffiché : laisse le champ vide pour le garder, saisis-en un autre pour le remplacer.
+3. Clique sur **Relier à Kosmy Board** : Calendy t'envoie sur le Board, et le compte avec lequel tu y es connecté rejoint la liste des comptes admis. Recommence pour chaque personne (connectée à son propre Board), ou coche l'admission automatique.
+
+Règles :
+
+- Un compte du Board est reconnu par son identifiant Kosmy Board (`sub`), **jamais par son e-mail** (le Board ne vérifie pas les adresses).
+- Un compte Kosmy Board admis accède au calendrier, mais **pas** aux réglages de la connexion unique ni à la liste des comptes : ils restent réservés au jeton. Aucun droit d'administration n'est jamais donné automatiquement.
+- **Admission automatique** (désactivée par défaut) : tout compte du Board qui a l'espace Calendy relié peut entrer, et rejoint la liste à sa première connexion.
+- **Retirer** un compte de la liste demande de ressaisir le jeton ; sa session Calendy cesse aussitôt de marcher.
+- Un compte qui n'est pas dans la liste voit « Ce compte Kosmy Board n'est relié à aucun accès Calendy ».
+- « Se déconnecter » ferme la session Calendy (cookie de 7 jours) ; la session du Board reste ouverte, et « Ouvrir » reconnecte d'un clic.
+- Derrière un proxy, Calendy déduit son adresse publique de `Host` et `X-Forwarded-Proto`. Si les adresses affichées sont fausses, définis `CALENDY_PUBLIC_URL` (par exemple `https://calendy.mondomaine.fr`) : l'adresse de retour doit être exactement celle saisie dans le Board.
+
+Côté protocole : `state`, `nonce` et PKCE (S256) à chaque connexion ; le `state` ne sert qu'une fois et il est lié au navigateur par un cookie ; `iss` est vérifié au lancement et au retour ; le code est échangé avec `client_secret_basic` ; l'ID token (RS256) est vérifié avec les clés de `jwks_uri` (signature, `iss`, `aud`, `exp`, `nonce`) ; la page cible (`target_link_uri`) doit être une page de Calendy. Les réglages et la liste sont dans `kosmy-board.json` (dossier des données, à ne pas partager).
 
 ## Variables d'environnement
 
@@ -212,13 +234,14 @@ Sauvegarde : copie `data.json` **et le dossier `images`** du volume. `historique
 | `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY` | Clés de l'agent IA, prioritaires sur celles saisies dans les réglages | aucune |
 | `MOCKY_URL`, `MOCKY_API_KEY` | Adresse de Mocky et clé d'assistant (`mocky_ak_…`) pour les visuels, prioritaires sur les réglages | aucune |
 | `CALENDY_HISTORIQUE_MAX` | Nombre d'actions gardées pour Annuler / Rétablir (`0` désactive l'annulation) | `100` |
+| `CALENDY_PUBLIC_URL` | Adresse publique de Calendy, pour la connexion avec Kosmy Board | déduite de la requête |
 
 Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_TOKEN` et `CALENDY_EXPORT_DIR`.
 
 ## Pour les développeurs
 
 ```bash
-npm test                # 77 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky
+npm test                # 90 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion Kosmy Board
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -252,6 +275,14 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | `GET /posts/:id/canva/meta` (idem `linkedin`) | Télécharge le fichier Canva (.pptx) du visuel Mocky |
 | `GET /export.xlsx` | Export Excel : `statuts` (`valide,planifie,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
 | `GET /health` | Contrôle de santé, sans jeton |
+| `GET /session` | Qui est connecté : `{ acces: "jeton" \| "kosmy" \| "ouvert", compte, kosmyBoard }` |
+| `GET /kosmy-board/etat` | Sans jeton : `{ actif }`, la connexion par Kosmy Board est-elle proposée |
+| `GET/PUT /kosmy-board/reglages` | Jeton seulement. Émetteur, identifiant client, secret (jamais renvoyé ; vide = inchangé, `null` = retiré), `admissionAuto`, adresses de retour et de lancement, comptes admis |
+| `POST /kosmy-board/relier` | Jeton seulement. Répond `{ url }` : l'adresse du Board où envoyer le navigateur pour relier un compte |
+| `POST /kosmy-board/retirer` | Jeton seulement : `{ "sub": "…", "jeton": "…" }` (le jeton est redemandé) |
+| `POST /kosmy-board/deconnexion` | Ferme la session ouverte par Kosmy Board |
+
+Hors de `/api` : `GET /auth/kosmy-board/login` (accepte `iss` et `target_link_uri`) et `GET /auth/kosmy-board/callback`.
 
 Le serveur refuse les requêtes dont l'en-tête `Origin` n'est pas son propre hôte, et celles dont le `Content-Type` n'est pas `application/json`, ce qui bloque les appels d'un autre site depuis le navigateur. La page est servie avec une politique de sécurité qui n'autorise aucune ressource externe.
 

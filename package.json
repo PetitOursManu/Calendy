@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/api.test.js test/mcp.test.js test/agent.test.js test/mocky.test.js",
+    "test": "node --test test/api.test.js test/mcp.test.js test/agent.test.js test/mocky.test.js test/kosmy-board.test.js",
     "build:mcp": "esbuild mcp.js --bundle --platform=node --format=cjs --target=node20 --outfile=dist/calendy-mcp.js --log-level=warning",
     "test:bundle": "MCP_ENTRY=dist/calendy-mcp.js node --test test/mcp.test.js"
   },
