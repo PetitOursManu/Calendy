@@ -87,9 +87,19 @@ L'adaptation garde le fond du message et le texte [entre crochets], n'invente au
 
 Les changements de l'agent sont enregistrés aussitôt et apparaissent dans la fiche ; une saisie non enregistrée sur un autre champ reste en place. Sur un post pas encore créé, il remplit simplement le formulaire, à enregistrer soi-même.
 
+### Vérifier les sources sur internet
+
+Si l'autorisation **Chercher sur internet** est cochée (elle l'est par défaut), l'agent peut chercher sur le web pour vérifier un événement : dates de l'édition de l'année, nom officiel, organisateur, thème. Il peut aussi vérifier un fait cité dans un post. Quand un événement est ouvert, le bouton **Vérifier les sources** lance cette vérification. On peut aussi le demander en toutes lettres (« vérifie les dates de la Semaine du Goût 2027 »).
+
+- L'agent préfère les sources officielles (site de l'organisateur, sites en .gouv.fr, associations nationales) et recoupe une source secondaire avec une autre. S'il ne trouve rien de sûr, il le dit et écrit `[à vérifier]` plutôt que d'inventer.
+- Les **pages consultées** s'affichent en liens sous sa réponse. Quand il crée ou corrige un événement d'après ses recherches, il ajoute « Source : » et l'adresse à la fin de son explication.
+- Avec **Claude**, la recherche et la lecture des pages se font chez Anthropic (outils `web_search` et `web_fetch`) : le serveur de Calendy ne se connecte à aucun site. Chaque recherche est facturée par Anthropic en plus des jetons (voir sa grille tarifaire). L'agent fait 5 recherches et 5 pages au plus par message. La recherche web doit être autorisée pour l'organisation dans la console Anthropic. Sinon, l'agent affiche un message qui le dit.
+- Avec **OpenRouter**, l'agent dispose d'un outil `recherche_web` qui fait une requête à part avec le greffon « web » d'OpenRouter, facturée par OpenRouter. Il n'y a qu'une recherche par appel de l'outil, et 5 au plus par message.
+- Le contenu des pages est traité comme une donnée : l'agent n'exécute pas les consignes qu'il y trouverait.
+
 Le **nom de la structure** se règle dans **Réglages, onglet Général** : il est vide par défaut, s'affiche à côté du logo, et il est repris dans l'export Excel et transmis à l'agent.
 
-Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images, créer des visuels Mocky). Le bouton **Tester la connexion** vérifie la clé et le modèle.
+Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images, créer des visuels Mocky, chercher sur internet). Le bouton **Tester la connexion** vérifie la clé et le modèle.
 
 La clé est conservée sur le serveur dans `agent.json` (dans le dossier des données, séparé de `data.json`) et n'est jamais renvoyée au navigateur. Les variables `ANTHROPIC_API_KEY` et `OPENROUTER_API_KEY`, si elles existent, ont la priorité. Toute personne qui a accès à Calendy peut utiliser l'agent, donc consommer le crédit de cette clé. Les textes concernés, et les images si l'autorisation est cochée, sont envoyés au fournisseur choisi.
 
@@ -241,7 +251,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 90 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion Kosmy Board
+npm test                # 93 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion Kosmy Board
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
