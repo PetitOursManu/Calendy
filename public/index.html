@@ -2998,6 +2998,12 @@ function afficherReglages(main) {
         <div><button type="button" class="btn small" data-action="ia-retirer-cle" hidden>Retirer la clé enregistrée</button></div></div>
       <label class="f"><span>Modèle</span><input type="text" name="modele" list="reglModeles" maxlength="120" spellcheck="false"><datalist id="reglModeles"></datalist><span class="hint" id="reglModeleAide"></span></label>
       <label class="f" id="reglEffort"><span>Niveau de réflexion</span><select name="effort">${effort('low', 'Rapide et économique')}${effort('medium', 'Équilibré (recommandé)')}${effort('high', 'Approfondi')}</select></label>
+      <fieldset><legend>Modèle de secours <em>facultatif</em></legend>
+        <p class="hint">Pris automatiquement quand le modèle principal ne répond pas (saturé, limite atteinte, en panne). Chaque nouveau message réessaie d’abord le modèle principal : dès qu’il remarche, il reprend la main.</p>
+        <label class="f"><span>Fournisseur du secours</span><select name="secoursFournisseur"><option value="">Aucun secours</option><option value="anthropic">Claude (Anthropic)</option><option value="openrouter">OpenRouter</option></select></label>
+        <label class="f" id="reglSecoursModele"><span>Modèle de secours</span><input type="text" name="secoursModele" list="reglModelesSecours" maxlength="120" spellcheck="false" value="${esc(a.secours.modele)}"><datalist id="reglModelesSecours"></datalist><span class="hint" id="reglSecoursAide"></span></label>
+        <div class="f" id="reglSecoursCle"><label class="f"><span id="reglSecoursCleNom">Clé API du secours</span><input type="password" name="cleSecours" autocomplete="off" spellcheck="false"></label><p class="hint" id="reglSecoursCleAide"></p></div>
+      </fieldset>
       <label class="f"><span>Instructions pour l’agent <em>facultatif</em></span><textarea name="instructions" rows="5" maxlength="4000" placeholder="Ton à employer, tutoiement ou vouvoiement, règles de rédaction de ta structure…">${esc(a.instructions)}</textarea></label>
       <fieldset><legend>L’agent peut aussi</legend>
         <p class="hint">Créer, déplacer, modifier et changer le statut restent toujours permis, avec Annuler disponible.</p>
@@ -3013,9 +3019,18 @@ function afficherReglages(main) {
   const form = main.querySelector('#reglagesAgent');
   form._modeles = { ...a.modeles };
   form._courant = a.fournisseur;
-  form.addEventListener('change', (e) => { if (e.target.name === 'fournisseur') changerFournisseur(form); });
+  form.elements.secoursFournisseur.value = a.secours.fournisseur;
+  form.addEventListener('change', (e) => {
+    if (e.target.name === 'fournisseur') { changerFournisseur(form); remplirSecours(form); }
+    if (e.target.name === 'secoursFournisseur') {
+      form.elements.secoursModele.value = e.target.value === 'anthropic' ? 'claude-sonnet-5-5' : '';
+      form.elements.cleSecours.value = '';
+      remplirSecours(form);
+    }
+  });
   form.addEventListener('submit', (e) => { e.preventDefault(); enregistrerReglages(form).catch(() => {}); });
   remplirFournisseur(form);
+  remplirSecours(form);
 }
 
 /* ---- réglages : Mocky ---- */
@@ -3225,6 +3240,34 @@ async function remplirFournisseur(form) {
   }
 }
 
+/** Le modèle de secours : sa liste de modèles, et sa clé quand il passe par un autre fournisseur que le principal. */
+async function remplirSecours(form) {
+  const f = form.elements.secoursFournisseur.value;
+  const nomF = f === 'anthropic' ? 'Anthropic' : 'OpenRouter';
+  form.querySelector('#reglSecoursModele').hidden = !f;
+  const blocCle = form.querySelector('#reglSecoursCle');
+  blocCle.hidden = !f || f === form._courant;
+  const aide = form.querySelector('#reglSecoursAide');
+  aide.textContent = f && f === form._courant ? `Même clé ${nomF} que le modèle principal : choisis un autre modèle, servi par d’autres hébergeurs.` : '';
+  if (!f) return;
+  const info = state.agent.cles[f];
+  const cle = form.elements.cleSecours;
+  form.querySelector('#reglSecoursCleNom').textContent = `Clé API ${nomF} du secours`;
+  cle.disabled = info.source === 'env';
+  cle.placeholder = info.source === 'env' ? '' : info.definie ? '•••••••• (laisser vide pour conserver)' : f === 'anthropic' ? 'sk-ant-…' : 'sk-or-…';
+  form.querySelector('#reglSecoursCleAide').textContent = info.source === 'env'
+    ? `La clé vient de la variable ${info.variable} du serveur.`
+    : info.definie ? `Une clé ${nomF} est enregistrée sur le serveur.` : `Sans clé ${nomF}, le secours reste inactif.`;
+  const liste = form.querySelector('#reglModelesSecours');
+  try {
+    if (!iaChargerModeles.has(f)) iaChargerModeles.set(f, api('GET', `/api/agent/modeles?fournisseur=${f}`));
+    const modeles = await iaChargerModeles.get(f);
+    if (form.elements.secoursFournisseur.value === f) liste.innerHTML = modeles.map((m) => `<option value="${esc(m.id)}">${esc(m.nom)}</option>`).join('');
+  } catch {
+    iaChargerModeles.delete(f);
+  }
+}
+
 /* ================= connexion avec Kosmy Board ================= */
 const dateCourte = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -3368,6 +3411,9 @@ async function enregistrerReglages(form) {
     permissions: Object.fromEntries(['supprimer', 'cloner', 'fusionner', 'images', 'mocky', 'internet'].map((p) => [p, el[`perm-${p}`].checked])),
   };
   if (el.cle.value.trim()) corps.cles = { [f]: el.cle.value.trim() };
+  const sf = el.secoursFournisseur.value;
+  corps.secours = { fournisseur: sf, modele: sf ? el.secoursModele.value.trim() : '' };
+  if (sf && sf !== f && el.cleSecours.value.trim()) corps.cles = { ...corps.cles, [sf]: el.cleSecours.value.trim() };
   try {
     state.agent = await api('PUT', '/api/agent/reglages', corps);
   } catch (err) {
@@ -3376,7 +3422,9 @@ async function enregistrerReglages(form) {
   }
   form._modeles = { ...state.agent.modeles };
   el.cle.value = '';
+  el.cleSecours.value = '';
   remplirFournisseur(form);
+  remplirSecours(form);
   majDockAgent();
   majContexteIa();
   if (chat.ouvert) dessinerChat();
