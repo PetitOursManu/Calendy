@@ -365,6 +365,69 @@ test('agent OpenRouter : boucle d’outils au format OpenAI', async () => {
   await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
 });
 
+/* ---------- modèle de secours ---------- */
+
+const saturation = { __statut: 503, error: { code: 503, message: 'The system is currently experiencing high demand and cannot process your request.', metadata: { provider_name: 'Azure' } } };
+
+test('agent : réglage du secours validé', async () => {
+  assert.equal((await api('PUT', '/api/agent/reglages', { secours: { fournisseur: 'autre' } })).status, 400);
+  assert.equal((await api('PUT', '/api/agent/reglages', { secours: { modele: 'a b' } })).status, 400);
+  const r = await api('PUT', '/api/agent/reglages', { secours: { fournisseur: 'anthropic', modele: 'claude-haiku-5-5' } });
+  assert.deepEqual(r.json.secours, { fournisseur: 'anthropic', modele: 'claude-haiku-5-5' });
+  await api('PUT', '/api/agent/reglages', { secours: { fournisseur: '', modele: '' } });
+});
+
+test('agent : OpenRouter saturé en cours de route, le secours Claude termine, puis le principal reprend la main', async () => {
+  await api('PUT', '/api/agent/reglages', {
+    fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test', anthropic: CLE }, modeles: { openrouter: 'openai/principal' },
+    secours: { fournisseur: 'anthropic', modele: 'claude-haiku-5-5' },
+  });
+  const p = await creerPost('Secours');
+  reponses = [
+    { choices: [{ finish_reason: 'tool_calls', message: { content: 'Je regarde.', tool_calls: [{ id: 'functions.lister_posts:0', type: 'function', function: { name: 'lister_posts', arguments: '{}' } }] } }] },
+    saturation,
+    claude(appel('changer_statut', { ids: [p.id], statut: 'valide' })),
+    claude(texte('Validé.')),
+  ];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Valide' }] });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.secours.modele, 'claude-haiku-5-5');
+  assert.match(r.json.reponse, /^Validé\.\n\n\(Réponse du modèle de secours claude-haiku-5-5 : openai\/principal n’a pas répondu\.\)$/);
+  assert.match(r.json.secours.raison, /high demand/);
+  assert.match(r.json.secours.raison, /Azure/);
+  assert.equal((await api('GET', `/api/posts/${p.id}`)).json.statut, 'valide');
+  assert.deepEqual(requetes.map((q) => q.url.startsWith('/or')), [true, true, false, false]);
+  // Le fil d'OpenRouter est traduit pour Claude : appel et résultat d'outil, identifiant nettoyé.
+  const [assistant, resultat] = requetes[2].body.messages.slice(1);
+  assert.match(`${requetes[2].headers['x-api-key']} ${requetes[2].headers.authorization}`, new RegExp(CLE));
+  assert.equal(requetes[2].body.model, 'claude-haiku-5-5');
+  assert.deepEqual(assistant.content.map((b) => b.type), ['text', 'tool_use']);
+  assert.equal(assistant.content[1].id, 'functions_lister_posts_0');
+  assert.equal(resultat.content[0].tool_use_id, 'functions_lister_posts_0');
+  assert.match(resultat.content[0].content, /"total"/);
+
+  requetes = [];
+  reponses = [{ choices: [{ finish_reason: 'stop', message: { content: 'Me revoilà.' } }] }];
+  const r2 = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Allo ?' }] });
+  assert.equal(r2.json.reponse, 'Me revoilà.');
+  assert.equal(r2.json.secours, null);
+  assert.equal(requetes[0].url, '/or/chat/completions');
+});
+
+test('agent : si le secours échoue aussi, les deux raisons sont données', async () => {
+  reponses = [saturation, { __statut: 529, __entetes: { 'x-should-retry': 'false' }, type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Allo ?' }] });
+  assert.equal(r.status, 424);
+  assert.match(r.json.error, /high demand.*secours \(claude-haiku-5-5\) n’a pas répondu non plus/s);
+});
+
+test('agent : le test de connexion vérifie aussi le secours', async () => {
+  reponses = [{ choices: [{ finish_reason: 'stop', message: { content: 'OK' } }] }, claude(texte('OK'))];
+  const r = await api('POST', '/api/agent/tester', {});
+  assert.match(r.json.message, /openai\/principal, et avec le secours claude-haiku-5-5/);
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic', secours: { fournisseur: '', modele: '' } });
+});
+
 /* ---------- internet ---------- */
 
 test('agent Claude : recherche et lecture web proposées selon le réglage et le modèle', async () => {

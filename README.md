@@ -101,6 +101,8 @@ Le **nom de la structure** se règle dans **Réglages, onglet Général** : il e
 
 Tout se règle dans **Réglages, onglet Agent IA** : activation, nom, fournisseur (**Claude** ou **OpenRouter**), clé API, modèle, niveau de réflexion (Claude), instructions de rédaction et autorisations (supprimer, cloner, fusionner, voir les images, créer des visuels Mocky, chercher sur internet). Le bouton **Tester la connexion** vérifie la clé et le modèle.
 
+**Modèle de secours** (facultatif) : un second modèle, chez le même fournisseur ou chez l'autre, avec sa propre clé si besoin. Quand le modèle principal ne répond pas (saturé, limite atteinte, en panne, crédit épuisé), Calendy bascule dessus pour la suite du message, même au milieu d'une série d'actions, et l'indique sous la réponse. Le message suivant réessaie d'abord le modèle principal : dès qu'il remarche, il reprend la main. Le secours sert aussi à écrire le code des visuels Mocky, et **Tester la connexion** le vérifie.
+
 La clé est conservée sur le serveur dans `agent.json` (dans le dossier des données, séparé de `data.json`) et n'est jamais renvoyée au navigateur. Les variables `ANTHROPIC_API_KEY` et `OPENROUTER_API_KEY`, si elles existent, ont la priorité. Toute personne qui a accès à Calendy peut utiliser l'agent, donc consommer le crédit de cette clé. Les textes concernés, et les images si l'autorisation est cochée, sont envoyés au fournisseur choisi.
 
 ## Visuels avec Mocky
