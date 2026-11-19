@@ -203,6 +203,25 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
 
   /* ------------------------------ fournisseurs ------------------------------ */
 
+  /**
+   * Message d'une limite de débit (429) : la cause en clair, le délai demandé par le fournisseur et son propre texte,
+   * sans quoi on ne peut pas distinguer une clé trop limitée d'un quota gratuit épuisé ou d'un modèle saturé.
+   */
+  function messageLimite(fournisseur, brut, attente) {
+    const detail = String(brut || '').replace(/\s*\(?\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b\)?/gi, '').replace(/\s+/g, ' ').trim();
+    let cause = `${fournisseur} limite le nombre de demandes de cette clé.`;
+    if (/acceleration/i.test(detail)) cause = 'Anthropic freine une hausse d’utilisation trop brusque de cette clé : elle se lèvera en espaçant un peu les demandes.';
+    else if (/input.tokens/i.test(detail)) cause = 'La limite de texte envoyé par minute de cette clé est atteinte : une grosse demande (tout un mois de posts, une recherche web…) suffit à la dépasser.';
+    else if (/output.tokens/i.test(detail)) cause = 'La limite de texte rédigé par minute de cette clé est atteinte.';
+    else if (/free-models-per-day/i.test(detail)) cause = 'Le quota du jour des modèles gratuits d’OpenRouter est épuisé : ajoute du crédit sur OpenRouter ou choisis un modèle payant.';
+    else if (/free-models-per-min/i.test(detail)) cause = 'Les modèles gratuits d’OpenRouter acceptent peu de demandes par minute.';
+    else if (/upstream|provider/i.test(detail)) cause = 'Ce modèle est saturé chez son hébergeur : réessaie plus tard ou choisis un autre modèle dans Réglages, onglet Agent IA.';
+    else if (/requests/i.test(detail)) cause = 'La limite de demandes par minute de cette clé est atteinte.';
+    const s = Number(attente);
+    const quand = Number.isFinite(s) && s > 0 ? `Réessaie dans ${s < 90 ? `${Math.ceil(s)} secondes` : `${Math.ceil(s / 60)} minutes`}.` : 'Réessaie dans une minute.';
+    return `Trop de demandes pour le moment. ${cause} ${quand}${detail ? ` (${fournisseur} : ${detail.slice(0, 300)})` : ''}`;
+  }
+
   function erreurFournisseur(err) {
     if (err instanceof HttpError) return err;
     const Anthropic = sdkAnthropic();
@@ -210,7 +229,10 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
     if (err instanceof Anthropic.AuthenticationError) return new HttpError(ERREUR_SERVICE, 'Clé API refusée par Anthropic. Vérifie-la dans Réglages, onglet Agent IA.');
     if (err instanceof Anthropic.PermissionDeniedError) return new HttpError(ERREUR_SERVICE, 'Cette clé API n’a pas accès à ce modèle.');
     if (err instanceof Anthropic.NotFoundError) return new HttpError(ERREUR_SERVICE, 'Modèle introuvable chez Anthropic. Vérifie son nom dans les réglages.');
-    if (err instanceof Anthropic.RateLimitError) return new HttpError(ERREUR_SERVICE, 'Trop de demandes pour le moment. Réessaie dans une minute.');
+    if (err instanceof Anthropic.RateLimitError) {
+      console.error('Agent IA : limite Anthropic (429)', err.requestID || '', err.apiMessage || err.message);
+      return new HttpError(ERREUR_SERVICE, messageLimite('Anthropic', err.apiMessage, err.headers && err.headers.get('retry-after')));
+    }
     if (err instanceof Anthropic.APIConnectionError) return new HttpError(ERREUR_SERVICE, 'Impossible de joindre Anthropic. Réessaie dans un instant.');
     if (err instanceof Anthropic.BadRequestError && /web_(search|fetch)/i.test(String(err.message))) {
       return new HttpError(ERREUR_SERVICE, 'La recherche sur internet est refusée pour cette clé ou ce modèle. Active la recherche web dans la console Anthropic, ou décoche « Chercher sur internet » dans Réglages, onglet Agent IA.');
@@ -332,7 +354,14 @@ function creerAgent({ dataDir, HttpError, appelerRoute, instantLocal, nomStructu
     const data = await res.json().catch(() => null);
     if (res.status === 401) throw new HttpError(ERREUR_SERVICE, 'Clé API refusée par OpenRouter. Vérifie-la dans Réglages, onglet Agent IA.');
     if (res.status === 402) throw new HttpError(ERREUR_SERVICE, 'Crédit OpenRouter insuffisant.');
-    if (res.status === 429) throw new HttpError(ERREUR_SERVICE, 'Trop de demandes pour le moment. Réessaie dans une minute.');
+    if (res.status === 429) {
+      const e = data && data.error;
+      // OpenRouter range la cause réelle (quota gratuit, modèle saturé chez l'hébergeur…) dans metadata.raw.
+      const raw = e && e.metadata && typeof e.metadata.raw === 'string' ? e.metadata.raw : '';
+      const detail = [e && typeof e.message === 'string' ? e.message : '', raw].filter(Boolean).join(' – ');
+      console.error('Agent IA : limite OpenRouter (429)', detail);
+      throw new HttpError(ERREUR_SERVICE, messageLimite('OpenRouter', detail, res.headers.get('retry-after')));
+    }
     if (!res.ok || !data || data.error) {
       const detail = data && data.error && typeof data.error.message === 'string' ? ` : ${data.error.message.slice(0, 200)}` : '';
       throw new HttpError(ERREUR_SERVICE, `OpenRouter a renvoyé une erreur${detail}`);

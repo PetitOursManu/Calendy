@@ -45,7 +45,7 @@ before(async () => {
       requetes.push({ url: req.url, headers: req.headers, body: morceaux.length ? JSON.parse(Buffer.concat(morceaux)) : null });
       const r = reponses.shift();
       const statut = r && r.__statut ? r.__statut : 200;
-      res.writeHead(statut, { 'Content-Type': 'application/json' });
+      res.writeHead(statut, { 'Content-Type': 'application/json', ...(r && r.__entetes) });
       res.end(JSON.stringify(r || claude(texte('(fin)'))));
     });
   });
@@ -324,6 +324,27 @@ test('agent : une clé refusée donne un message clair, pas un 401 qui redemande
   const r = await api('POST', '/api/agent/tester', {});
   assert.equal(r.status, 424, 'jamais 502 : un proxy le remplacerait par sa page HTML');
   assert.match(r.json.error, /Clé API refusée/);
+});
+
+test('agent : une limite de débit dit pourquoi et quand réessayer', async () => {
+  // x-should-retry: false évite les nouvelles tentatives automatiques du SDK.
+  const limite = { __statut: 429, __entetes: { 'retry-after': '42', 'x-should-retry': 'false' }, type: 'error', error: { type: 'rate_limit_error', message: 'This request would exceed the rate limit for your organization (0b6f1c2e-1111-2222-3333-444455556666) of 30,000 input tokens per minute.' } };
+  reponses = [limite];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Valide janvier' }] });
+  assert.equal(r.status, 424);
+  assert.match(r.json.error, /texte envoyé par minute/);
+  assert.match(r.json.error, /42 secondes/);
+  assert.match(r.json.error, /30,000 input tokens per minute/);
+  assert.doesNotMatch(r.json.error, /0b6f1c2e/, 'pas d’identifiant d’organisation');
+});
+
+test('agent OpenRouter : un quota gratuit épuisé est expliqué', async () => {
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test' }, modeles: { openrouter: 'x/modele:free' } });
+  reponses = [{ __statut: 429, error: { code: 429, message: 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day' } }];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Allo ?' }] });
+  assert.equal(r.status, 424);
+  assert.match(r.json.error, /quota du jour des modèles gratuits/);
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
 });
 
 test('agent OpenRouter : boucle d’outils au format OpenAI', async () => {
