@@ -641,6 +641,24 @@ dialog[open]>#dock{animation:apparait-tard .3s linear}
 .reglages .etat{font-weight:700}
 .reglages .etat.ok{color:var(--valide)}
 .reglages .etat.ko{color:var(--refuse)}
+
+/* ---------- connexion avec Kosmy Board ---------- */
+.btn.kosmy{background:var(--ink);border-color:var(--ink);color:#fff;text-decoration:none}
+.btn.kosmy:hover{background:#0F1B2E;border-color:#0F1B2E}
+.kb-connexion{display:grid;gap:12px;margin:16px 22px 0}
+.kb-connexion .btn{width:100%;padding:11px 16px}
+.ou{display:flex;align-items:center;gap:10px;color:var(--mute);font-size:13.5px}
+.ou::before,.ou::after{content:"";flex:1;height:1px;background:var(--line)}
+.kb-adresse{display:grid;gap:6px}
+.kb-adresse>span{font-weight:700;font-size:14.5px}
+.kb-adresse>div{display:flex;align-items:center;gap:8px}
+.kb-adresse code{flex:1;min-width:0;overflow-wrap:anywhere;font:13.5px/1.4 ui-monospace,Consolas,monospace;background:var(--soft);padding:8px 11px;border-radius:var(--r-s)}
+.kb-comptes{display:grid;gap:8px;list-style:none;margin:0;padding:0}
+.kb-compte{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;padding:11px 14px;border:1.5px solid var(--line);border-radius:var(--r-m)}
+.kb-compte>div{flex:1;min-width:200px;display:grid}
+.kb-compte .hint{overflow-wrap:anywhere}
+.kb-session{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--mute)}
+.kb-session[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -663,6 +681,7 @@ dialog[open]>#dock{animation:apparait-tard .3s linear}
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6.5A2.5 2.5 0 0 0 12.5 4h-6A2.5 2.5 0 0 0 4 6.5v6A2.5 2.5 0 0 0 6.5 15H9"/></symbol>
   <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v3c0 3 3 5 6 5s6-2 6-5V4M12 12v8M9 17l3 3 3-3"/></symbol>
   <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5 21V4M5 4h13l-3 4.500 3 4.500H5"/></symbol>
+  <symbol id="i-kosmy" viewBox="0 0 24 24"><path d="M12 3l1.900 5.600L19.500 10.500l-5.600 1.900L12 18l-1.900-5.600L4.500 10.500l5.600-1.900z"/><circle cx="18.500" cy="18.500" r="1.500"/><circle cx="5" cy="19" r="1"/></symbol>
   <symbol id="i-reglages" viewBox="0 0 24 24"><path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.500"/><circle cx="9" cy="17" r="2.500"/></symbol>
   <symbol id="i-clip" viewBox="0 0 24 24"><rect x="5.5" y="5" width="13" height="16" rx="2"/><path d="M9 5V3.5h6V5M9 11h6M9 15h4"/></symbol>
   <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="7" height="15" rx="1.5"/><rect x="13.5" y="4.5" width="7" height="15" rx="1.5"/><path d="M5.5 9h3M5.5 12h3M15.5 9h3M15.5 12h3"/></symbol>
@@ -682,6 +701,7 @@ dialog[open]>#dock{animation:apparait-tard .3s linear}
     <button class="tab" data-action="view" data-view="reglages"><svg class="ic" aria-hidden="true"><use href="#i-reglages"/></svg>Réglages</button>
   </nav>
   <div class="top-actions">
+    <span class="kb-session" id="kbSession" hidden></span>
     <button class="btn" data-action="open-export"><svg class="ic"><use href="#i-down"/></svg>Exporter en Excel</button>
     <button class="btn primary" data-action="new-post"><svg class="ic"><use href="#i-plus"/></svg>Nouveau post</button>
   </div>
@@ -772,7 +792,7 @@ const shiftMonth = (ym, n) => { const d = new Date(Number(ym.slice(0, 4)), Numbe
 const icon = (id) => `<svg class="ic" aria-hidden="true"><use href="#${id}"/></svg>`;
 
 /* ================= état ================= */
-const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', evVue: 'liste', evMois: todayIso().slice(0, 7), loaded: false, sig: '', historique: { annuler: null, retablir: null }, agent: null, structure: '', reglagesOnglet: 'general', mocky: null, mockyModeles: null, mockyTaches: [] };
+const state = { evenements: [], posts: [], view: 'calendrier', month: todayIso().slice(0, 7), hidden: new Set(), collapsed: new Set(), valMois: null, valVue: 'liste', evVue: 'liste', evMois: todayIso().slice(0, 7), loaded: false, sig: '', historique: { annuler: null, retablir: null }, agent: null, structure: '', reglagesOnglet: 'general', session: null, kosmy: null, mocky: null, mockyModeles: null, mockyTaches: [] };
 const libelleLien = () => `Lien avec ${state.structure || 'la structure'}`;
 const evById = (id) => state.evenements.find((e) => e.id === id);
 /** Une couleur par événement, attribuée dans l'ordre chronologique : deux événements voisins n'ont pas la même. */
@@ -793,6 +813,7 @@ function askToken(refused) {
     const dlg = $('#tokenDlg');
     dlg.innerHTML = `<form class="modal-form">
       <header class="modal-head"><h2 id="dlgTitle">Accès protégé</h2></header>
+      <div class="kb-connexion" id="kbConnexion" hidden><a class="btn kosmy" href="/auth/kosmy-board/login">${icon('i-kosmy')}Se connecter avec Kosmy Board</a><p class="ou">ou</p></div>
       <p>Saisis le jeton d’accès de Calendy (la valeur de CALENDY_TOKEN sur le serveur).</p>
       ${refused ? '<p class="form-error" role="alert">Ce jeton est refusé. Vérifie-le et réessaie.</p>' : ''}
       <label class="f"><span>Jeton d’accès</span><input type="password" name="token" autocomplete="current-password" required></label>
@@ -806,6 +827,11 @@ function askToken(refused) {
       resolve();
     });
     dlg.showModal();
+    // La connexion par Kosmy Board n'est proposée que si elle est réglée.
+    fetch('/api/kosmy-board/etat').then((r) => (r.ok ? r.json() : null)).then((e) => {
+      const zone = dlg.querySelector('#kbConnexion');
+      if (e && e.actif && zone) zone.hidden = false;
+    }).catch(() => { /* sans elle, le jeton suffit */ });
   });
   return tokenPromise;
 }
@@ -2943,7 +2969,7 @@ function majStructure(nom) {
 function afficherReglages(main) {
   const vue = state.reglagesOnglet;
   if (main.querySelector(`[data-reglages=${vue}]`)) return; // ne pas effacer une saisie en cours à chaque mise à jour du calendrier
-  const onglets = [['general', 'Général'], ['agent', 'Agent IA'], ['mocky', 'Mocky']].map(([v, l]) => `<button type="button" class="tab" data-action="reglages-onglet" data-onglet="${v}"${vue === v ? ' aria-current="page"' : ''}>${l}</button>`).join('');
+  const onglets = [['general', 'Général'], ['agent', 'Agent IA'], ['mocky', 'Mocky'], ['kosmy', 'Kosmy Board']].map(([v, l]) => `<button type="button" class="tab" data-action="reglages-onglet" data-onglet="${v}"${vue === v ? ' aria-current="page"' : ''}>${l}</button>`).join('');
   const entete = `<div class="cal-bar"><h2 style="font-size:27px">Réglages</h2></div>
     <div class="sous-onglets" role="group" aria-label="Sections des réglages">${onglets}</div>`;
   if (vue === 'general') {
@@ -2957,6 +2983,7 @@ function afficherReglages(main) {
     return;
   }
   if (vue === 'mocky') { afficherReglagesMocky(main, entete); return; }
+  if (vue === 'kosmy') { afficherReglagesKosmy(main, entete); return; }
   const a = state.agent;
   if (!a) { main.innerHTML = '<p class="loading">Chargement des réglages…</p>'; return; }
   const perm = (n, label, detail) => `<label class="radio"><input type="checkbox" name="perm-${n}"${a.permissions[n] ? ' checked' : ''}><span>${label} <span class="hint">${detail}</span></span></label>`;
@@ -3198,6 +3225,130 @@ async function remplirFournisseur(form) {
   }
 }
 
+/* ================= connexion avec Kosmy Board ================= */
+const dateCourte = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+
+function afficherReglagesKosmy(main, entete) {
+  const s = state.session;
+  if (!s || (s.acces === 'jeton' && !state.kosmy)) { main.innerHTML = `${entete}<p class="loading">Chargement des réglages…</p>`; return; }
+  if (s.acces === 'kosmy') {
+    const c = s.compte || {};
+    main.innerHTML = `${entete}<div class="reglages" data-reglages="kosmy">
+      <h3>Connexion avec Kosmy Board</h3>
+      <p>Tu es connecté·e avec Kosmy Board : <strong>${esc(c.nom || c.email)}</strong>${c.email && c.nom ? ` (${esc(c.email)})` : ''}.</p>
+      <p class="hint">Les réglages de la connexion unique et la liste des comptes admis sont réservés à une connexion avec le jeton d’accès de Calendy.</p>
+      <div class="boutons"><button type="button" class="btn" data-action="kb-deconnexion">Se déconnecter de Calendy</button></div>
+      <p class="hint">Ta session sur Kosmy Board reste ouverte : « Ouvrir » depuis le Board te reconnecte d’un clic.</p>
+    </div>`;
+    return;
+  }
+  if (s.acces === 'ouvert') {
+    main.innerHTML = `${entete}<div class="reglages" data-reglages="kosmy">
+      <h3>Connexion avec Kosmy Board</h3>
+      <p>Calendy est ouvert à tous : aucun jeton d’accès (CALENDY_TOKEN) n’est défini sur le serveur. La connexion unique n’a donc pas de sens.</p>
+      <p class="hint">Définis CALENDY_TOKEN, redémarre Calendy, puis reviens ici avec le jeton pour régler la connexion avec Kosmy Board.</p>
+    </div>`;
+    return;
+  }
+  const k = state.kosmy;
+  const adresse = (nom, url) => `<div class="kb-adresse"><span>${esc(nom)}</span><div><code>${esc(url)}</code>${boutonCopie(`data-action="kb-copier" data-texte="${esc(url)}"`, nom.toLowerCase())}</div></div>`;
+  const comptes = k.comptes.length
+    ? `<ul class="kb-comptes">${k.comptes.map((c) => `<li class="kb-compte"><div><strong>${esc(c.nom || c.email || 'Compte Kosmy Board')}</strong><span class="hint">${esc(c.email)}${c.email ? ' · ' : ''}relié le ${esc(dateCourte(c.relieLe))}${c.derniereConnexion ? ` · dernière connexion le ${esc(dateCourte(c.derniereConnexion))}` : ''}</span></div><button type="button" class="btn small no" data-action="kb-retirer" data-sub="${esc(c.sub)}" data-nom="${esc(c.nom || c.email)}">Retirer</button></li>`).join('')}</ul>`
+    : '<p class="hint">Aucun compte relié pour l’instant.</p>';
+  main.innerHTML = `${entete}<form class="reglages reglages-mocky" id="reglagesKosmy" data-reglages="kosmy" novalidate>
+    <p class="hint">Avec la connexion unique, les comptes Kosmy Board admis ouvrent Calendy depuis leur Board, sans jeton. Dans Kosmy Board : ajoute l’espace Calendy, ouvre Modifier → Connexion unique, active-la, puis colle ici les trois réglages affichés.</p>
+    <section class="regl-section"><h3>Adresses à donner au Board</h3>
+      ${adresse('Adresse de retour', k.adresseRetour)}
+      ${adresse('Adresse de lancement', k.adresseLancement)}
+      <p class="hint">Le Board les remplit tout seul si l’adresse de l’espace est celle de Calendy. Sur un serveur, définis CALENDY_PUBLIC_URL si ces adresses ne sont pas les bonnes.</p>
+    </section>
+    <section class="regl-section"><h3>Réglages de connexion</h3>
+      <label class="f"><span>Émetteur</span><input type="url" name="emetteur" placeholder="https://board.mondomaine.fr/oidc" value="${esc(k.emetteur)}" autocomplete="off"></label>
+      <label class="f"><span>Identifiant client</span><input type="text" name="clientId" maxlength="200" value="${esc(k.clientId)}" autocomplete="off"></label>
+      <label class="f"><span>Secret client${k.secretDefini ? ' <em>enregistré ; laisse vide pour le garder</em>' : ''}</span><input type="password" name="secret" autocomplete="new-password"${k.secretDefini ? ' placeholder="••••••••••••"' : ''}></label>
+      <label class="radio"><input type="checkbox" name="admissionAuto"${k.admissionAuto ? ' checked' : ''}><span>Admettre automatiquement tout compte du Board qui a l’espace Calendy <span class="hint">Désactivé : seuls les comptes reliés ci-dessous peuvent entrer.</span></span></label>
+      <div class="boutons"><button type="submit" class="btn primary">Enregistrer</button><span class="etat" id="reglEtat" role="status"></span></div>
+      <p class="hint">${k.actif ? 'La connexion avec Kosmy Board est active.' : 'Inactive : l’émetteur, l’identifiant et le secret client sont nécessaires.'}</p>
+    </section>
+    <section class="regl-section"><h3>Comptes Kosmy Board admis</h3>
+      <p class="hint">Ils sont reconnus par leur identifiant Kosmy Board, jamais par leur e-mail. Ils ont accès au calendrier, pas à ces réglages.</p>
+      ${comptes}
+      <div class="boutons"><button type="button" class="btn" data-action="kb-relier"${k.actif ? '' : ' disabled'}>${icon('i-kosmy')}Relier à Kosmy Board</button></div>
+      <p class="hint">Calendy t’envoie sur Kosmy Board : le compte avec lequel tu y es connecté·e est ajouté à la liste.</p>
+    </section>
+  </form>`;
+  const form = main.querySelector('form');
+  form.addEventListener('submit', (e) => { e.preventDefault(); enregistrerKosmy(form); });
+}
+
+function rafraichirKosmy() {
+  const vieux = $('#main').querySelector('[data-reglages=kosmy]');
+  if (vieux) vieux.remove();
+  if (state.view === 'reglages' && state.reglagesOnglet === 'kosmy') render();
+}
+
+async function chargerSession() {
+  state.session = await api('GET', '/api/session');
+  state.kosmy = state.session.acces === 'jeton' ? await api('GET', '/api/kosmy-board/reglages') : null;
+  const el = $('#kbSession');
+  const c = state.session.compte;
+  el.hidden = state.session.acces !== 'kosmy';
+  el.innerHTML = c ? `${icon('i-kosmy')}<span>${esc(c.nom || c.email)}</span><button type="button" class="btn small" data-action="kb-deconnexion">Se déconnecter</button>` : '';
+  rafraichirKosmy();
+}
+
+async function enregistrerKosmy(form) {
+  const el = form.elements;
+  try {
+    state.kosmy = await api('PUT', '/api/kosmy-board/reglages', {
+      emetteur: el.emetteur.value,
+      clientId: el.clientId.value,
+      secret: el.secret.value,
+      admissionAuto: el.admissionAuto.checked,
+    });
+    rafraichirKosmy();
+    etatReglages($('#reglagesKosmy'), 'Réglages enregistrés.', true);
+  } catch (err) {
+    etatReglages(form, err.message, false);
+  }
+}
+
+async function relierKosmy(bouton) {
+  bouton.disabled = true;
+  try {
+    const r = await api('POST', '/api/kosmy-board/relier', {});
+    window.location.assign(r.url);
+  } catch (err) {
+    bouton.disabled = false;
+    toast(err.message, { error: true });
+  }
+}
+
+function retirerKosmy(sub, nom) {
+  const dlg = ouvrirAction(`<form class="modal-form">${actionHead(`Retirer ${nom || 'ce compte'}`)}
+    <p>Ce compte Kosmy Board ne pourra plus ouvrir Calendy. Pour confirmer, saisis le jeton d’accès de Calendy.</p>
+    <label class="f"><span>Jeton d’accès</span><input type="password" name="jeton" autocomplete="current-password" required></label>
+    <p class="form-error" role="alert" hidden></p>
+    <div class="modal-foot"><button type="button" class="btn" data-action="close-dialog">Annuler</button><button type="submit" class="btn no">Retirer</button></div>
+  </form>`);
+  const form = dlg.querySelector('form');
+  form.elements.jeton.focus();
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    soumettreAction(form, async () => {
+      state.kosmy = await api('POST', '/api/kosmy-board/retirer', { sub, jeton: form.elements.jeton.value });
+      closeDialog(dlg);
+      rafraichirKosmy();
+      toast('Compte retiré de la liste.');
+    });
+  });
+}
+
+async function deconnecterKosmy() {
+  await api('POST', '/api/kosmy-board/deconnexion', {});
+  window.location.assign('/');
+}
+
 function etatReglages(form, message, ok) {
   const el = form.querySelector('#reglEtat');
   el.textContent = message;
@@ -3371,6 +3522,10 @@ document.addEventListener('click', (e) => {
       break;
     }
     case 'reglages-onglet': state.reglagesOnglet = d.onglet; render(); break;
+    case 'kb-copier': copierTexte(d.texte, t).catch((err) => toast(err.message, { error: true })); break;
+    case 'kb-relier': relierKosmy(t); break;
+    case 'kb-retirer': retirerKosmy(d.sub, d.nom); break;
+    case 'kb-deconnexion': guard(deconnecterKosmy); break;
     case 'mocky-creer': guard(() => lancerMocky(t, 'creer')); break;
     case 'mocky-modifier': guard(() => lancerMocky(t, 'modifier')); break;
     case 'mocky-reprendre': guard(() => lancerMocky(t, 'reprendre')); break;
@@ -3486,8 +3641,17 @@ const poll = () => {
 setInterval(poll, 20000);
 document.addEventListener('visibilitychange', poll);
 
+// Retour de « Relier à Kosmy Board » : on montre la liste des comptes admis.
+if (new URLSearchParams(window.location.search).get('kosmy') === 'relie') {
+  window.history.replaceState(null, '', window.location.pathname);
+  state.view = 'reglages';
+  state.reglagesOnglet = 'kosmy';
+  setTimeout(() => toast('Compte Kosmy Board relié : il peut maintenant ouvrir Calendy depuis son Board.'), 0);
+}
+
 render();
 guard(refresh);
+guard(chargerSession);
 guard(chargerAgent);
 guard(chargerMocky);
 })();
