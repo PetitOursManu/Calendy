@@ -22,7 +22,7 @@ const ADMIN_PATH = '/api/kosmy-board/admin';
 const PROTOCOLE = 'kosmy.board-admin.v1';
 const SECTION_RE = /^[a-z0-9-]{1,40}$/;
 const SECTIONS = ['overview', 'general', 'agent', 'mocky', 'kosmy-board'];
-const PERMISSIONS = ['supprimer', 'cloner', 'fusionner', 'images', 'mocky'];
+const PERMISSIONS = ['supprimer', 'cloner', 'fusionner', 'images', 'mocky', 'internet'];
 const FOURNISSEURS = ['anthropic', 'openrouter'];
 const STATUTS = ['idee', 'valide', 'planifie', 'publie', 'refuse'];
 
@@ -125,6 +125,11 @@ const TEXTES = {
     'ag.perm.fusionner': 'L’agent peut fusionner des posts (après confirmation)',
     'ag.perm.images': 'L’agent peut voir les images des posts (transmises au fournisseur d’IA, coût plus élevé)',
     'ag.perm.mocky': 'L’agent peut créer et modifier des visuels avec Mocky (si Mocky est configuré)',
+    'ag.perm.internet': 'Chercher sur internet (pour vérifier les dates et les sources des événements ; chaque recherche est facturée par le fournisseur d’IA)',
+    'ag.secoursFournisseur': 'Modèle de secours : fournisseur',
+    'ag.secoursAucun': 'Aucun secours',
+    'ag.secoursModele': 'Modèle de secours',
+    'ag.secoursAide': 'Pris quand le modèle principal ne répond pas (saturé, limité, en panne), le temps d’un message. Il utilise la clé de son fournisseur.',
     'ag.cle': 'Clé API {fournisseur}',
     'ag.cleEnv': 'Fixée par la variable {variable} du serveur : pas modifiable ici.',
     'ag.cleDefinie': 'Enregistrée : laisse vide pour la garder',
@@ -306,6 +311,11 @@ const TEXTES = {
     'ag.perm.fusionner': 'The agent may merge posts (after confirmation)',
     'ag.perm.images': 'The agent may see post images (sent to the AI provider, higher cost)',
     'ag.perm.mocky': 'The agent may create and edit visuals with Mocky (if Mocky is set up)',
+    'ag.perm.internet': 'Search the internet (to check event dates and sources; each search is billed by the AI provider)',
+    'ag.secoursFournisseur': 'Fallback model: provider',
+    'ag.secoursAucun': 'No fallback',
+    'ag.secoursModele': 'Fallback model',
+    'ag.secoursAide': 'Used when the main model doesn’t answer (overloaded, rate-limited, down), for one message. It uses its provider’s key.',
     'ag.cle': '{fournisseur} API key',
     'ag.cleEnv': 'Set by the server variable {variable}: cannot be changed here.',
     'ag.cleDefinie': 'Saved: leave empty to keep it',
@@ -571,6 +581,8 @@ function creerAdminBoard({ kosmy, OidcErreur, HttpError, envoyer, lireCorps, adr
             { name: 'modeleOpenrouter', label: t('ag.modeleOpenrouter'), type: 'text', value: a.modeles.openrouter || '', maxLength: 120, placeholder: 'anthropic/claude-…', help: t('ag.modeleOpenrouterAide') },
             { name: 'effort', label: t('ag.effort'), type: 'select', value: a.effort, help: t('ag.effortAide'), options: ['low', 'medium', 'high'].map((e) => ({ value: e, label: t(`ag.effort.${e}`) })) },
             { name: 'instructions', label: t('ag.instructions'), type: 'textarea', value: a.instructions || '', maxLength: 4000, placeholder: t('ag.instructionsAide') },
+            { name: 'secoursFournisseur', label: t('ag.secoursFournisseur'), type: 'select', value: a.secours?.fournisseur || '', options: [{ value: '', label: t('ag.secoursAucun') }, { value: 'anthropic', label: 'Claude (Anthropic)' }, { value: 'openrouter', label: 'OpenRouter' }] },
+            { name: 'secoursModele', label: t('ag.secoursModele'), type: 'text', value: a.secours?.modele || '', maxLength: 120, help: t('ag.secoursAide') },
             ...PERMISSIONS.map((p) => ({ name: `perm-${p}`, label: t(`ag.perm.${p}`), type: 'checkbox', value: Boolean(a.permissions[p]) })),
             ...FOURNISSEURS.map(champCle),
           ],
@@ -758,6 +770,11 @@ function creerAdminBoard({ kosmy, OidcErreur, HttpError, envoyer, lireCorps, adr
         const permissions = {};
         for (const p of PERMISSIONS) if (`perm-${p}` in v) permissions[p] = v[`perm-${p}`] === true;
         if (Object.keys(permissions).length) body.permissions = permissions;
+        // Modèle de secours : mêmes règles que les réglages de Calendy (agent.modifier).
+        const secours = {};
+        if ('secoursFournisseur' in v) secours.fournisseur = texte(v.secoursFournisseur);
+        if ('secoursModele' in v) secours.modele = texte(v.secoursModele);
+        if (Object.keys(secours).length) body.secours = secours;
         // Clés en écriture seule : vide = inchangée ; une clé venue d'une variable d'environnement ne se remplace pas ici.
         const nouvelles = {};
         for (const f of FOURNISSEURS) {

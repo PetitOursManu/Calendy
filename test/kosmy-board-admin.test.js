@@ -329,6 +329,22 @@ test('action : agent IA (clé en écriture seule) et règle Mocky retirée', asy
   assert.deepEqual(apres.json.section.blocks.find((b) => b.id === 'themes').rows.map((x) => x.cells.theme), ['Jardin']);
 });
 
+test('action : agent IA, recherche sur internet et modèle de secours', async () => {
+  const sec = await admin('GET', `${ADMIN}/agent`);
+  assert.equal(sec.status, 200, JSON.stringify(sec.json));
+  const champs = sec.json.blocks.find((b) => b.type === 'form').fields.map((f) => f.name);
+  assert.ok(champs.includes('perm-internet') && champs.includes('secoursFournisseur') && champs.includes('secoursModele'));
+  const r = await admin('POST', `${ADMIN}/agent`, { body: { action: 'save-agent', values: { 'perm-internet': false, secoursFournisseur: 'openrouter', secoursModele: 'anthropic/claude-haiku-5-5' } } });
+  assert.equal(r.status, 200);
+  const a = (await appel('GET', '/api/agent/reglages')).json;
+  assert.equal(a.permissions.internet, false);
+  assert.deepEqual(a.secours, { fournisseur: 'openrouter', modele: 'anthropic/claude-haiku-5-5' });
+  // Un enregistrement sans ces champs ne les efface pas.
+  assert.equal((await admin('POST', `${ADMIN}/agent`, { body: { action: 'save-agent', values: { nom: 'Plume' } } })).status, 200);
+  assert.equal((await appel('GET', '/api/agent/reglages')).json.secours.modele, 'anthropic/claude-haiku-5-5');
+  assert.equal((await admin('POST', `${ADMIN}/agent`, { body: { action: 'save-agent', values: { secoursFournisseur: 'inconnu' } } })).status, 400);
+});
+
 test('Kosmy Board : retirer un compte demande le jeton de Calendy, jamais son propre compte', async () => {
   const faux = await admin('POST', `${ADMIN}/kosmy-board`, { body: { action: 'remove-account', row: 'sub-bob', values: { jeton: 'mauvais' } } });
   assert.equal(faux.status, 422);
