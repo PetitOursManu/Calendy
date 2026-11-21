@@ -16,6 +16,9 @@
  * retour ; échange du code en client_secret_basic ; ID token RS256 vérifié avec les clés de `jwks_uri`
  * (signature, iss, aud, exp, nonce). Le state ne sert qu'une fois et il est lié au navigateur par un cookie.
  *
+ * Admin dans le Board (kosmy-board-admin.js) : authentifierAdmin vérifie le jeton kb-admin+jwt avec les mêmes réglages
+ * et les mêmes clés, puis retrouve le compte par son `sub` ; seul un compte relié avec le jeton est administrateur.
+ *
  * Réglages et liste d'accès dans DATA_DIR/kosmy-board.json (fichier séparé de data.json, mode 600).
  * Le secret client n'est jamais renvoyé au navigateur.
  */
@@ -35,6 +38,11 @@ const FLUX_MAX = 500;
 const COMPTES_MAX = 200;
 const DELAI_RESEAU = 10000;
 const TOLERANCE_HORLOGE = 60; // secondes
+// Admin dans le Board : jeton à usage unique, valable 60 s, 30 s de tolérance d'horloge (docs/admin-api.md du Board).
+const ADMIN_TYP = 'kb-admin+jwt';
+const ADMIN_TOLERANCE = 30; // secondes
+const ADMIN_AGE_MAX = 120; // secondes
+const ADMIN_CLES_DELAI = 60 * 1000; // une clé inconnue relit les clés du Board au plus une fois par minute
 
 class OidcErreur extends Error {
   constructor(code, message) {
@@ -106,20 +114,21 @@ function decoderPartie(partie) {
 }
 
 /**
- * Vérifie l'ID token : JWT RS256 signé par une des clés du Board, puis iss, aud, exp et nonce.
- * Renvoie ses revendications, ou lève une OidcErreur.
+ * Vérifie la signature d'un JWT du Board : RS256 seulement, avec une des clés de `jwks_uri`.
+ * Renvoie { entete, charge }, ou lève une OidcErreur (code « cle » si la clé est inconnue : le Board a pu en changer).
  */
-function verifierIdToken(idToken, { cles, emetteur, clientId, nonce, maintenant = Date.now() }) {
-  const parties = String(idToken || '').split('.');
-  if (parties.length !== 3) throw new OidcErreur('jeton', 'ID token illisible.');
+function verifierSignature(jwt, cles, nom = 'ID token') {
+  const parties = String(jwt || '').split('.');
+  if (parties.length !== 3) throw new OidcErreur('jeton', `${nom} illisible.`);
   let entete;
   let charge;
   try {
     entete = decoderPartie(parties[0]);
     charge = decoderPartie(parties[1]);
   } catch {
-    throw new OidcErreur('jeton', 'ID token illisible.');
+    throw new OidcErreur('jeton', `${nom} illisible.`);
   }
+  if (!entete || typeof entete !== 'object' || !charge || typeof charge !== 'object') throw new OidcErreur('jeton', `${nom} illisible.`);
   if (entete.alg !== 'RS256') throw new OidcErreur('jeton', `Algorithme de signature refusé : ${entete.alg}.`);
   const rsa = (cles || []).filter((k) => k && k.kty === 'RSA' && (!k.use || k.use === 'sig') && (!k.alg || k.alg === 'RS256'));
   const cle = entete.kid ? rsa.find((k) => k.kid === entete.kid) : rsa.length === 1 ? rsa[0] : null;
@@ -132,7 +141,16 @@ function verifierIdToken(idToken, { cles, emetteur, clientId, nonce, maintenant 
   }
   const signee = Buffer.from(`${parties[0]}.${parties[1]}`);
   const ok = crypto.verify('RSA-SHA256', signee, publique, Buffer.from(parties[2], 'base64url'));
-  if (!ok) throw new OidcErreur('jeton', 'Signature de l’ID token invalide.');
+  if (!ok) throw new OidcErreur('jeton', `Signature de l’${nom} invalide.`);
+  return { entete, charge };
+}
+
+/**
+ * Vérifie l'ID token : JWT RS256 signé par une des clés du Board, puis iss, aud, exp et nonce.
+ * Renvoie ses revendications, ou lève une OidcErreur.
+ */
+function verifierIdToken(idToken, { cles, emetteur, clientId, nonce, maintenant = Date.now() }) {
+  const { charge } = verifierSignature(idToken, cles);
 
   if (charge.iss !== emetteur) throw new OidcErreur('jeton', 'ID token d’un autre émetteur.');
   const aud = Array.isArray(charge.aud) ? charge.aud : [charge.aud];
@@ -143,6 +161,34 @@ function verifierIdToken(idToken, { cles, emetteur, clientId, nonce, maintenant 
   if (typeof charge.iat === 'number' && charge.iat - TOLERANCE_HORLOGE > sec) throw new OidcErreur('jeton', 'ID token daté du futur.');
   if (!charge.nonce || !egal(charge.nonce, nonce)) throw new OidcErreur('jeton', 'Nonce invalide.');
   if (typeof charge.sub !== 'string' || !charge.sub) throw new OidcErreur('jeton', 'ID token sans identifiant (sub).');
+  return charge;
+}
+
+/**
+ * Vérifie le jeton de l'admin dans le Board (protocole kosmy.board-admin.v1, docs/admin-api.md de Kosmy Board) :
+ * signature RS256 (mêmes clés que les ID tokens), `typ` = kb-admin+jwt (un ID token n'est jamais accepté ici),
+ * iss, aud, exp (30 s de tolérance), âge du jeton, `htm` = méthode, chemin de `htu` terminé par le chemin demandé.
+ * Le `jti` à usage unique est contrôlé par l'appelant, qui garde la mémoire des jetons déjà vus.
+ * Renvoie les revendications, ou lève une OidcErreur.
+ */
+function verifierJetonAdmin(jeton, { cles, emetteur, clientId, methode, chemin, maintenant = Date.now() }) {
+  const { entete, charge } = verifierSignature(jeton, cles, 'jeton d’admin');
+  const typ = String(entete.typ || '').toLowerCase().replace(/^application\//, '');
+  if (typ !== ADMIN_TYP) throw new OidcErreur('jeton', 'Ce n’est pas un jeton d’admin du Board.');
+  if (charge.iss !== emetteur) throw new OidcErreur('jeton', 'Jeton d’un autre émetteur.');
+  const aud = Array.isArray(charge.aud) ? charge.aud : [charge.aud];
+  if (!aud.includes(clientId)) throw new OidcErreur('jeton', 'Jeton destiné à une autre appli.');
+  const sec = Math.floor(maintenant / 1000);
+  if (typeof charge.exp !== 'number' || charge.exp + ADMIN_TOLERANCE < sec) throw new OidcErreur('jeton', 'Jeton expiré.');
+  if (typeof charge.iat !== 'number' || charge.iat - ADMIN_TOLERANCE > sec || sec - charge.iat > ADMIN_AGE_MAX + ADMIN_TOLERANCE) {
+    throw new OidcErreur('jeton', 'Jeton trop ancien ou daté du futur.');
+  }
+  if (charge.htm !== methode) throw new OidcErreur('jeton', 'Jeton fait pour une autre méthode.');
+  let htu = '';
+  try { htu = new URL(charge.htu).pathname.replace(/\/+$/, ''); } catch { /* refusé juste en dessous */ }
+  if (!htu || !htu.endsWith(chemin)) throw new OidcErreur('jeton', 'Jeton fait pour une autre adresse.');
+  if (typeof charge.jti !== 'string' || !charge.jti || charge.jti.length > 200) throw new OidcErreur('jeton', 'Jeton sans identifiant (jti).');
+  if (typeof charge.sub !== 'string' || !charge.sub) throw new OidcErreur('jeton', 'Jeton sans identifiant de compte (sub).');
   return charge;
 }
 
@@ -192,7 +238,8 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
     return r.cleSession;
   }
 
-  const comptepublic = (c) => ({ sub: c.sub, nom: c.nom || '', email: c.email || '', relieLe: c.relieLe || '', derniereConnexion: c.derniereConnexion || '' });
+  // `par` : « jeton » (relié par « Relier à Kosmy Board », avec le jeton) ou « admission-auto ».
+  const comptepublic = (c) => ({ sub: c.sub, nom: c.nom || '', email: c.email || '', relieLe: c.relieLe || '', derniereConnexion: c.derniereConnexion || '', par: c.par || '' });
 
   /** Réglages montrés dans l'interface (jamais le secret). */
   function publics(base) {
@@ -425,7 +472,46 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
 
   const cookieDeconnexion = (base) => cookie(COOKIE_SESSION, '', { maxAge: 0, secure: base.startsWith('https:') });
 
-  return { publics, modifier, retirer, demarrer, terminer, session, cookieDeconnexion, actif: () => actif() };
+  /* ---------- admin dans le Board ---------- */
+
+  const jtiVus = new Map(); // jti → fin de validité (ms) : un jeton d'admin ne sert qu'une fois
+  let clesRelues = 0;
+
+  /**
+   * Authentifie une requête de l'admin dans le Board : jeton (voir verifierJetonAdmin), jti jamais vu, puis
+   * `sub` → compte de la liste d'accès. Renvoie { claims, compte, admin } ; `admin` est vrai pour un compte relié
+   * avec le jeton (« Relier à Kosmy Board »), faux pour un compte admis automatiquement.
+   * Lève une OidcErreur : « inactif », « jeton », « non_relie », ou une erreur de découverte.
+   */
+  async function authentifierAdmin({ autorisation, methode, chemin }) {
+    const r = lire();
+    if (!actif(r)) throw new OidcErreur('inactif', 'La connexion avec Kosmy Board n’est pas réglée dans Calendy.');
+    const m = /^Bearer\s+([\w-]+\.[\w-]+\.[\w-]+)$/i.exec(String(autorisation || ''));
+    if (!m) throw new OidcErreur('jeton', 'Jeton du Board absent.');
+    let d = await decouvrir(r.emetteur);
+    const options = { emetteur: r.emetteur, clientId: r.clientId, methode, chemin, maintenant: maintenant() };
+    let claims;
+    try {
+      claims = verifierJetonAdmin(m[1], { ...options, cles: d.cles });
+    } catch (err) {
+      // Clé inconnue : le Board a peut-être changé de clé. On relit ses clés, au plus une fois par minute.
+      if (!(err instanceof OidcErreur) || err.code !== 'cle' || maintenant() - clesRelues < ADMIN_CLES_DELAI) throw err;
+      clesRelues = maintenant();
+      d = await decouvrir(r.emetteur, { rafraichirCles: true });
+      claims = verifierJetonAdmin(m[1], { ...options, cles: d.cles });
+    }
+    const t = maintenant();
+    for (const [jti, fin] of jtiVus) if (fin < t) jtiVus.delete(jti);
+    if (jtiVus.has(claims.jti)) throw new OidcErreur('jeton', 'Jeton déjà utilisé.');
+    jtiVus.set(claims.jti, claims.exp * 1000 + ADMIN_TOLERANCE * 1000);
+
+    // Le Board dit qui est la personne ; les droits, c'est Calendy qui les donne.
+    const compte = r.comptes.find((c) => c.sub === claims.sub);
+    if (!compte) throw new OidcErreur('non_relie', 'Ce compte Kosmy Board n’est relié à aucun accès Calendy.');
+    return { claims, compte: comptepublic(compte), admin: compte.par === 'jeton' };
+  }
+
+  return { publics, modifier, retirer, demarrer, terminer, session, cookieDeconnexion, authentifierAdmin, actif: () => actif() };
 }
 
-module.exports = { creerKosmyBoard, verifierIdToken, normaliserEmetteur, cibleSure, enteteBasic, defiPkce, OidcErreur, LOGIN_PATH, CALLBACK_PATH, COOKIE_SESSION, COOKIE_FLUX };
+module.exports = { creerKosmyBoard, verifierIdToken, verifierJetonAdmin, normaliserEmetteur, cibleSure, enteteBasic, defiPkce, OidcErreur, LOGIN_PATH, CALLBACK_PATH, COOKIE_SESSION, COOKIE_FLUX };
