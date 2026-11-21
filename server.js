@@ -31,6 +31,8 @@ const ExcelJS = require('exceljs');
 const { creerAgent } = require('./agent.js');
 const { creerMocky } = require('./mocky.js');
 const { creerKosmyBoard, OidcErreur, LOGIN_PATH, CALLBACK_PATH } = require('./kosmy-board.js');
+const { creerAdminBoard } = require('./kosmy-board-admin.js');
+const VERSION = require('./package.json').version;
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -1477,6 +1479,35 @@ async function parcoursKosmy(req, res, pathname, query) {
   }
 }
 
+/*
+ * Admin dans Kosmy Board (kosmy-board-admin.js) : le serveur du Board décrit et pilote les réglages de Calendy avec un
+ * jeton à usage unique. Ces routes passent avant le contrôle d'Origin, le jeton CALENDY_TOKEN et la session par cookie :
+ * elles ont leur propre authentification et répondent toujours en JSON, sans CORS ni redirection.
+ */
+const adminBoard = creerAdminBoard({
+  kosmy,
+  OidcErreur,
+  HttpError,
+  envoyer: (res, status, corps) => send(res, status, corps, SECURITY_HEADERS),
+  lireCorps: readBody,
+  adressePublique,
+  calendy: {
+    version: VERSION,
+    fuseau: FUSEAU,
+    historiqueMax: HISTORIQUE_MAX,
+    agent,
+    mocky,
+    donnees: () => ({ posts: db.posts, evenements: db.evenements }),
+    nombreImages: (post) => toutesLesPhotos(post.photos).length,
+    aujourdhui: () => instantLocal().jour,
+    publierPostsEchus,
+    etatHistorique,
+    nomStructure,
+    modifierReglages,
+    jetonValide: (valeur) => Boolean(TOKEN) && jetonEgal(nettoyerJeton(valeur), TOKEN),
+  },
+});
+
 /** Routes /api/kosmy-board/* et /api/session (hors de portée de l'agent IA) ; renvoie true si la requête a été traitée. */
 async function apiKosmy(req, res, pathname, acces) {
   if (!pathname.startsWith('/api/kosmy-board/') && pathname !== '/api/session') return false;
@@ -1549,6 +1580,7 @@ async function handle(req, res) {
   }
 
   if (req.method === 'GET' && (pathname === LOGIN_PATH || pathname === CALLBACK_PATH)) return parcoursKosmy(req, res, pathname, query);
+  if (adminBoard.concerne(pathname)) return adminBoard.traiter(req, res, pathname);
 
   if (!pathname.startsWith('/api/')) return send(res, 404, { error: 'Introuvable.' }, SECURITY_HEADERS);
 

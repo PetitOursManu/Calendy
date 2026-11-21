@@ -233,6 +233,28 @@ Règles :
 
 Côté protocole : `state`, `nonce` et PKCE (S256) à chaque connexion ; le `state` ne sert qu'une fois et il est lié au navigateur par un cookie ; `iss` est vérifié au lancement et au retour ; le code est échangé avec `client_secret_basic` ; l'ID token (RS256) est vérifié avec les clés de `jwks_uri` (signature, `iss`, `aud`, `exp`, `nonce`) ; la page cible (`target_link_uri`) doit être une page de Calendy. Les réglages et la liste sont dans `kosmy-board.json` (dossier des données, à ne pas partager).
 
+## Admin dans Kosmy Board
+
+Depuis Kosmy Board, le bouton **Admin** de l'espace Calendy affiche les réglages de Calendy dans le Board lui-même, sans ouvrir l'appli (protocole `kosmy.board-admin.v1`, voir la [spécification](https://github.com/PetitOursManu/Kosmy-Board/blob/main/docs/admin-api.md)). Le Board ne fait qu'afficher et transmettre : chaque action passe par les mêmes fonctions et les mêmes règles que les Réglages de Calendy.
+
+Ce qu'on y trouve :
+
+- **Vue d'ensemble** : nombre de posts (par statut, et ceux des 30 prochains jours), événements, images, comptes Kosmy Board ; version, adresse, structure, fuseau horaire, dernière action, état de l'agent IA, de Mocky et de la connexion unique.
+- **Général** : le nom de la structure.
+- **Agent IA** : activation, nom, fournisseur, modèles, niveau de réflexion, instructions, permissions, clés API (en écriture seule : jamais réaffichées, vide = inchangée), « Tester la connexion », « Retirer la clé ».
+- **Visuels Mocky** : adresse, clé d'assistant (écriture seule), qui écrit le visuel, formats, consignes générales, « Tester la connexion », « Retirer la clé » ; le modèle par défaut et les règles par thème et par événement (une règle peut y être retirée) ; les visuels demandés depuis le dernier démarrage.
+- **Kosmy Board** : les réglages de la connexion unique (le secret n'est jamais réaffiché), la liste des comptes admis avec leurs droits, « Retirer » un compte, et le formulaire de la connexion unique. Comme dans Calendy, ces modifications demandent le **jeton d'accès** de Calendy, ressaisi à chaque fois ; on ne peut pas retirer son propre compte depuis le Board.
+
+Restent dans Calendy : choisir le modèle Mocky par défaut et les modèles des règles (la liste des modèles vient de Mocky), les consignes par modèle, **Relier à Kosmy Board** (il faut passer par le navigateur), l'export Excel, et tout le calendrier lui-même.
+
+Conditions :
+
+- La **connexion unique avec Kosmy Board doit être réglée** dans Calendy (voir ci-dessus) : l'admin dans le Board en reprend l'émetteur, l'identifiant client, les clés de signature du Board et la liste des comptes.
+- Le compte Kosmy Board de la personne doit être **relié avec le jeton** (Réglages → Kosmy Board → « Relier à Kosmy Board ») : c'est lui qui a les droits d'administration. Un compte **admis automatiquement** a accès au calendrier, pas à cette administration ; pour lui comme pour un compte absent de la liste, le Board affiche le message de Calendy qui explique quoi faire.
+- Le serveur du Board doit pouvoir joindre Calendy à l'adresse de l'espace.
+
+Côté protocole : `GET /api/kosmy-board/admin` (le sommaire), `GET` et `POST /api/kosmy-board/admin/{section}`. Chaque requête porte un jeton du Board (`Authorization: Bearer`) signé avec la clé de ses ID tokens, vérifié par Calendy : RS256 seulement, `typ` = `kb-admin+jwt` (un ID token est refusé), `iss`, `aud` = l'identifiant client, `exp` (30 secondes de tolérance), `htm` = la méthode, `htu` = l'adresse appelée, `jti` à usage unique (gardé en mémoire jusqu'à son expiration), puis `sub` → compte relié → droits. Erreurs en JSON (`invalid_token`, `not_linked`, `forbidden`, `not_found`…), sans CORS ni redirection ; textes en français ou en anglais selon `Accept-Language`. Chaque action est notée dans le journal du serveur avec le nom du compte.
+
 ## Variables d'environnement
 
 | Variable | Rôle | Défaut |
@@ -253,7 +275,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 93 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion Kosmy Board
+npm test                # 117 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion et admin Kosmy Board
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -293,6 +315,7 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | `POST /kosmy-board/relier` | Jeton seulement. Répond `{ url }` : l'adresse du Board où envoyer le navigateur pour relier un compte |
 | `POST /kosmy-board/retirer` | Jeton seulement : `{ "sub": "…", "jeton": "…" }` (le jeton est redemandé) |
 | `POST /kosmy-board/deconnexion` | Ferme la session ouverte par Kosmy Board |
+| `GET /kosmy-board/admin`, `GET/POST /kosmy-board/admin/{section}` | Admin dans Kosmy Board : jeton du Board seulement (pas `CALENDY_TOKEN` ni la session), voir « Admin dans Kosmy Board » |
 
 Hors de `/api` : `GET /auth/kosmy-board/login` (accepte `iss` et `target_link_uri`) et `GET /auth/kosmy-board/callback`.
 
