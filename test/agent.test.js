@@ -45,7 +45,7 @@ before(async () => {
       requetes.push({ url: req.url, headers: req.headers, body: morceaux.length ? JSON.parse(Buffer.concat(morceaux)) : null });
       const r = reponses.shift();
       const statut = r && r.__statut ? r.__statut : 200;
-      res.writeHead(statut, { 'Content-Type': 'application/json' });
+      res.writeHead(statut, { 'Content-Type': 'application/json', ...(r && r.__entetes) });
       res.end(JSON.stringify(r || claude(texte('(fin)'))));
     });
   });
@@ -326,6 +326,27 @@ test('agent : une clé refusée donne un message clair, pas un 401 qui redemande
   assert.match(r.json.error, /Clé API refusée/);
 });
 
+test('agent : une limite de débit dit pourquoi et quand réessayer', async () => {
+  // x-should-retry: false évite les nouvelles tentatives automatiques du SDK.
+  const limite = { __statut: 429, __entetes: { 'retry-after': '42', 'x-should-retry': 'false' }, type: 'error', error: { type: 'rate_limit_error', message: 'This request would exceed the rate limit for your organization (0b6f1c2e-1111-2222-3333-444455556666) of 30,000 input tokens per minute.' } };
+  reponses = [limite];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Valide janvier' }] });
+  assert.equal(r.status, 424);
+  assert.match(r.json.error, /texte envoyé par minute/);
+  assert.match(r.json.error, /42 secondes/);
+  assert.match(r.json.error, /30,000 input tokens per minute/);
+  assert.doesNotMatch(r.json.error, /0b6f1c2e/, 'pas d’identifiant d’organisation');
+});
+
+test('agent OpenRouter : un quota gratuit épuisé est expliqué', async () => {
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test' }, modeles: { openrouter: 'x/modele:free' } });
+  reponses = [{ __statut: 429, error: { code: 429, message: 'Rate limit exceeded: free-models-per-day. Add 10 credits to unlock 1000 free model requests per day' } }];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Allo ?' }] });
+  assert.equal(r.status, 424);
+  assert.match(r.json.error, /quota du jour des modèles gratuits/);
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
+});
+
 test('agent OpenRouter : boucle d’outils au format OpenAI', async () => {
   await api('PUT', '/api/agent/reglages', { fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test' }, modeles: { openrouter: 'anthropic/claude-test' } });
   const p = await creerPost('Via OpenRouter');
@@ -341,5 +362,125 @@ test('agent OpenRouter : boucle d’outils au format OpenAI', async () => {
   assert.equal(requetes[0].body.messages[0].role, 'system');
   assert.deepEqual(requetes[1].body.messages.at(-1).role, 'tool');
   assert.equal((await api('GET', `/api/posts/${p.id}`)).json.statut, 'valide');
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
+});
+
+/* ---------- modèle de secours ---------- */
+
+const saturation = { __statut: 503, error: { code: 503, message: 'The system is currently experiencing high demand and cannot process your request.', metadata: { provider_name: 'Azure' } } };
+
+test('agent : réglage du secours validé', async () => {
+  assert.equal((await api('PUT', '/api/agent/reglages', { secours: { fournisseur: 'autre' } })).status, 400);
+  assert.equal((await api('PUT', '/api/agent/reglages', { secours: { modele: 'a b' } })).status, 400);
+  const r = await api('PUT', '/api/agent/reglages', { secours: { fournisseur: 'anthropic', modele: 'claude-haiku-5-5' } });
+  assert.deepEqual(r.json.secours, { fournisseur: 'anthropic', modele: 'claude-haiku-5-5' });
+  await api('PUT', '/api/agent/reglages', { secours: { fournisseur: '', modele: '' } });
+});
+
+test('agent : OpenRouter saturé en cours de route, le secours Claude termine, puis le principal reprend la main', async () => {
+  await api('PUT', '/api/agent/reglages', {
+    fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test', anthropic: CLE }, modeles: { openrouter: 'openai/principal' },
+    secours: { fournisseur: 'anthropic', modele: 'claude-haiku-5-5' },
+  });
+  const p = await creerPost('Secours');
+  reponses = [
+    { choices: [{ finish_reason: 'tool_calls', message: { content: 'Je regarde.', tool_calls: [{ id: 'functions.lister_posts:0', type: 'function', function: { name: 'lister_posts', arguments: '{}' } }] } }] },
+    saturation,
+    claude(appel('changer_statut', { ids: [p.id], statut: 'valide' })),
+    claude(texte('Validé.')),
+  ];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Valide' }] });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.secours.modele, 'claude-haiku-5-5');
+  assert.match(r.json.reponse, /^Validé\.\n\n\(Réponse du modèle de secours claude-haiku-5-5 : openai\/principal n’a pas répondu\.\)$/);
+  assert.match(r.json.secours.raison, /high demand/);
+  assert.match(r.json.secours.raison, /Azure/);
+  assert.equal((await api('GET', `/api/posts/${p.id}`)).json.statut, 'valide');
+  assert.deepEqual(requetes.map((q) => q.url.startsWith('/or')), [true, true, false, false]);
+  // Le fil d'OpenRouter est traduit pour Claude : appel et résultat d'outil, identifiant nettoyé.
+  const [assistant, resultat] = requetes[2].body.messages.slice(1);
+  assert.match(`${requetes[2].headers['x-api-key']} ${requetes[2].headers.authorization}`, new RegExp(CLE));
+  assert.equal(requetes[2].body.model, 'claude-haiku-5-5');
+  assert.deepEqual(assistant.content.map((b) => b.type), ['text', 'tool_use']);
+  assert.equal(assistant.content[1].id, 'functions_lister_posts_0');
+  assert.equal(resultat.content[0].tool_use_id, 'functions_lister_posts_0');
+  assert.match(resultat.content[0].content, /"total"/);
+
+  requetes = [];
+  reponses = [{ choices: [{ finish_reason: 'stop', message: { content: 'Me revoilà.' } }] }];
+  const r2 = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Allo ?' }] });
+  assert.equal(r2.json.reponse, 'Me revoilà.');
+  assert.equal(r2.json.secours, null);
+  assert.equal(requetes[0].url, '/or/chat/completions');
+});
+
+test('agent : si le secours échoue aussi, les deux raisons sont données', async () => {
+  reponses = [saturation, { __statut: 529, __entetes: { 'x-should-retry': 'false' }, type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } }];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Allo ?' }] });
+  assert.equal(r.status, 424);
+  assert.match(r.json.error, /high demand.*secours \(claude-haiku-5-5\) n’a pas répondu non plus/s);
+});
+
+test('agent : le test de connexion vérifie aussi le secours', async () => {
+  reponses = [{ choices: [{ finish_reason: 'stop', message: { content: 'OK' } }] }, claude(texte('OK'))];
+  const r = await api('POST', '/api/agent/tester', {});
+  assert.match(r.json.message, /openai\/principal, et avec le secours claude-haiku-5-5/);
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic', secours: { fournisseur: '', modele: '' } });
+});
+
+/* ---------- internet ---------- */
+
+test('agent Claude : recherche et lecture web proposées selon le réglage et le modèle', async () => {
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  const web = requetes[0].body.tools.filter((t) => t.type);
+  assert.deepEqual(web.map((t) => t.type), ['web_search_20250305', 'web_fetch_20250910'], 'variantes de base pour Haiku');
+  assert.equal(web[0].user_location.country, 'FR');
+  assert.match(JSON.stringify(requetes[0].body.system), /Internet : tu peux chercher/);
+
+  await api('PUT', '/api/agent/reglages', { modeles: { anthropic: 'claude-opus-5-5' } });
+  requetes = [];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  assert.deepEqual(requetes[0].body.tools.filter((t) => t.type).map((t) => t.type), ['web_search_20260209', 'web_fetch_20260209']);
+
+  await api('PUT', '/api/agent/reglages', { modeles: { anthropic: 'claude-haiku-5-5' }, permissions: { internet: false } });
+  assert.equal((await api('GET', '/api/agent/reglages')).json.permissions.internet, false);
+  requetes = [];
+  await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Salut' }] });
+  assert.ok(!requetes[0].body.tools.some((t) => t.type), 'aucun outil web');
+  assert.doesNotMatch(JSON.stringify(requetes[0].body.system), /Internet : tu peux chercher/);
+  await api('PUT', '/api/agent/reglages', { permissions: { internet: true } });
+});
+
+test('agent Claude : reprend après pause_turn, recolle le texte cité et renvoie les sources', async () => {
+  const recherche = { type: 'server_tool_use', id: 'srv1', name: 'web_search', input: { query: 'Semaine du Goût 2030 dates' } };
+  const resultats = { type: 'web_search_tool_result', tool_use_id: 'srv1', content: [{ type: 'web_search_result', url: 'https://www.legout.com/', title: 'Semaine du Goût', encrypted_content: 'x' }] };
+  const cite = (t, url, title) => ({ type: 'text', text: t, citations: [{ type: 'web_search_result_location', url, title, cited_text: t, encrypted_index: 'y' }] });
+  reponses = [
+    { ...claude(texte('Je vérifie.'), recherche), stop_reason: 'pause_turn' },
+    claude(resultats, texte('La Semaine du Goût 2030 a lieu '), cite('du 14 au 20 octobre', 'https://www.legout.com/#dates', 'Semaine du Goût'), texte(' selon le site officiel.')),
+  ];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Vérifie les dates' }] });
+  assert.equal(r.status, 200);
+  assert.equal(requetes.length, 2);
+  assert.equal(requetes[1].body.messages.at(-1).role, 'assistant', 'le fil est renvoyé tel quel, sans message « continue »');
+  assert.equal(r.json.reponse, 'Je vérifie.\n\nLa Semaine du Goût 2030 a lieu du 14 au 20 octobre selon le site officiel.');
+  assert.deepEqual(r.json.sources, [{ url: 'https://www.legout.com/', titre: 'Semaine du Goût' }]);
+});
+
+test('agent OpenRouter : recherche_web passe par le greffon web et renvoie les sources', async () => {
+  await api('PUT', '/api/agent/reglages', { fournisseur: 'openrouter', cles: { openrouter: 'sk-or-test' }, modeles: { openrouter: 'anthropic/claude-test' } });
+  reponses = [
+    { choices: [{ finish_reason: 'tool_calls', message: { content: null, tool_calls: [{ id: 'c1', type: 'function', function: { name: 'recherche_web', arguments: JSON.stringify({ question: 'Dates DuoDay 2030' }) } }] } }] },
+    { choices: [{ finish_reason: 'stop', message: { content: 'Le DuoDay 2030 a lieu le 21 novembre.', annotations: [{ type: 'url_citation', url_citation: { url: 'https://www.duoday.fr/', title: 'DuoDay' } }, { type: 'url_citation', url_citation: { url: 'javascript:alert(1)', title: 'piège' } }] } }] },
+    { choices: [{ finish_reason: 'stop', message: { content: 'Confirmé : 21 novembre (duoday.fr).' } }] },
+  ];
+  const r = await api('POST', '/api/agent/message', { messages: [{ role: 'user', content: 'Vérifie le DuoDay' }] });
+  assert.equal(r.status, 200);
+  assert.ok(requetes[0].body.tools.some((t) => t.function.name === 'recherche_web'));
+  assert.ok(!requetes[0].body.plugins, 'pas de recherche à chaque échange');
+  assert.deepEqual(requetes[1].body.plugins, [{ id: 'web', max_results: 5 }]);
+  assert.match(requetes[2].body.messages.at(-1).content, /https:\/\/www\.duoday\.fr\//);
+  assert.equal(r.json.reponse, 'Confirmé : 21 novembre (duoday.fr).');
+  assert.deepEqual(r.json.sources, [{ url: 'https://www.duoday.fr/', titre: 'DuoDay' }], 'adresses http(s) seulement');
   await api('PUT', '/api/agent/reglages', { fournisseur: 'anthropic' });
 });
