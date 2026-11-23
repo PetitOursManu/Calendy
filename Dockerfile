@@ -11,7 +11,7 @@ ENV NODE_ENV=production \
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY server.js agent.js mocky.js kosmy-board.js kosmy-board-admin.js seed.json ./
+COPY server.js agent.js mocky.js kosmy-board.js kosmy-board-admin.js kosmy-board-users.js seed.json ./
 COPY public ./public
 
 # Les données (data.json) vivent dans un volume : elles survivent aux mises à jour de l'image.

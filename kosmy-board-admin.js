@@ -8,8 +8,8 @@
  *   POST /api/kosmy-board/admin/{section}   une action : { action, row?, values? }
  *
  * Le jeton est vérifié par kosmy-board.js (mêmes réglages, mêmes clés et même liste d'accès que la connexion unique).
- * Droits : seul un compte Kosmy Board relié avec le jeton (« Relier à Kosmy Board ») est administrateur ; un compte
- * admis automatiquement n'a accès qu'au calendrier. Comme dans Calendy, les réglages de la connexion unique et la liste
+ * Droits : seul un compte Kosmy Board actif de rôle « admin » est administrateur (relié avec le jeton, « Relier à
+ * Kosmy Board », ou nommé administrateur depuis le Board, voir kosmy-board-users.js) ; un membre n'a accès qu'au calendrier. Comme dans Calendy, les réglages de la connexion unique et la liste
  * des comptes demandent en plus le jeton d'accès de Calendy.
  *
  * Chaque action passe par les mêmes fonctions que les réglages de Calendy (mêmes règles, mêmes messages d'erreur).
@@ -43,7 +43,8 @@ const TEXTES = {
     'err.inactif': 'La connexion unique avec Kosmy Board n’est pas réglée dans Calendy.',
     'err.jeton': 'Jeton du Board refusé.',
     'err.non_relie': 'Ce compte Kosmy Board n’est relié à aucun accès Calendy. Ouvre Calendy avec le jeton d’accès, puis Réglages → Kosmy Board → « Relier à Kosmy Board ».',
-    'err.interdit': 'Ton compte Kosmy Board a accès au calendrier de Calendy, mais pas à son administration : seul un compte relié avec le jeton d’accès (Réglages → Kosmy Board → « Relier à Kosmy Board ») l’administre.',
+    'err.interdit': 'Ton compte Kosmy Board a accès au calendrier de Calendy, mais pas à son administration : seul un compte administrateur (relié avec le jeton d’accès, Réglages → Kosmy Board → « Relier à Kosmy Board », ou nommé administrateur depuis Kosmy Board) l’administre.',
+    'err.desactive': 'Ton compte Calendy est désactivé : il n’a plus accès à cette administration.',
     'err.section': 'Section inconnue.',
     'err.action': 'Action inconnue.',
     'err.methode': 'Méthode non prise en charge.',
@@ -218,6 +219,8 @@ const TEXTES = {
     'kb.colDerniere': 'Dernière connexion',
     'kb.roleAdmin': 'Administrateur',
     'kb.roleMembre': 'Calendrier seulement',
+    'kb.roleLecture': 'Lecture seule',
+    'kb.desactive': 'Désactivé',
     'kb.vous': '{nom} (toi)',
     'kb.retirer': 'Retirer',
     'kb.retirerConfirm': 'Ce compte Kosmy Board ne pourra plus ouvrir Calendy, et sa session Calendy cesse aussitôt.',
@@ -229,7 +232,8 @@ const TEXTES = {
     'err.inactif': 'Single sign-on with Kosmy Board is not set up in Calendy.',
     'err.jeton': 'Board token rejected.',
     'err.non_relie': 'This Kosmy Board account is not linked to any Calendy access. Open Calendy with the access token, then Settings → Kosmy Board → “Link to Kosmy Board”.',
-    'err.interdit': 'Your Kosmy Board account can use Calendy’s calendar but not its administration: only an account linked with the access token (Settings → Kosmy Board → “Link to Kosmy Board”) administers it.',
+    'err.interdit': 'Your Kosmy Board account can use Calendy’s calendar but not its administration: only an administrator account (linked with the access token, Settings → Kosmy Board → “Link to Kosmy Board”, or made administrator from Kosmy Board) administers it.',
+    'err.desactive': 'Your Calendy account is deactivated: it no longer has access to this administration.',
     'err.section': 'Unknown section.',
     'err.action': 'Unknown action.',
     'err.methode': 'Method not supported.',
@@ -404,6 +408,8 @@ const TEXTES = {
     'kb.colDerniere': 'Last sign-in',
     'kb.roleAdmin': 'Administrator',
     'kb.roleMembre': 'Calendar only',
+    'kb.roleLecture': 'Read only',
+    'kb.desactive': 'Deactivated',
     'kb.vous': '{nom} (you)',
     'kb.retirer': 'Remove',
     'kb.retirerConfirm': 'This Kosmy Board account will no longer be able to open Calendy, and its Calendy session stops at once.',
@@ -455,7 +461,8 @@ function creerAdminBoard({ kosmy, OidcErreur, HttpError, envoyer, lireCorps, adr
 
   async function authentifier(req, chemin, t) {
     try {
-      const { claims, compte, admin } = await kosmy.authentifierAdmin({ autorisation: req.headers.authorization, methode: req.method, chemin });
+      const { claims, compte, admin, actif } = await kosmy.authentifierAdmin({ autorisation: req.headers.authorization, methode: req.method, chemin });
+      if (!actif) throw new AdminErreur(403, 'forbidden', t('err.desactive'));
       if (!admin) throw new AdminErreur(403, 'forbidden', t('err.interdit'));
       return { claims, compte };
     } catch (err) {
@@ -514,7 +521,7 @@ function creerAdminBoard({ kosmy, OidcErreur, HttpError, envoyer, lireCorps, adr
         { label: t('ov.aVenir'), value: aVenir, hint: t('ov.aVenirHint') },
         { label: t('ov.evenements'), value: evenements.length },
         { label: t('ov.images'), value: images },
-        { label: t('ov.comptes'), value: sso.comptes.length, hint: t('ov.comptesHint', { n: sso.comptes.filter((c) => c.par === 'jeton').length }) },
+        { label: t('ov.comptes'), value: sso.comptes.length, hint: t('ov.comptesHint', { n: sso.comptes.filter((c) => c.role === 'admin' && c.actif).length }) },
       ],
     });
     blocs.push({
@@ -702,7 +709,9 @@ function creerAdminBoard({ kosmy, OidcErreur, HttpError, envoyer, lireCorps, adr
               cells: {
                 nom: c.sub === moi ? t('kb.vous', { nom }) : nom,
                 email: c.email,
-                role: c.par === 'jeton' ? { text: t('kb.roleAdmin'), tone: 'success' } : { text: t('kb.roleMembre'), tone: 'muted' },
+                role: !c.actif ? { text: t('kb.desactive'), tone: 'danger' }
+                  : c.role === 'admin' ? { text: t('kb.roleAdmin'), tone: 'success' }
+                    : { text: t(c.restrictions.lectureSeule ? 'kb.roleLecture' : 'kb.roleMembre'), tone: 'muted' },
                 relie: dateHeure(c.relieLe, langue),
                 derniere: dateHeure(c.derniereConnexion, langue),
               },

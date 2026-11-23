@@ -32,6 +32,7 @@ const { creerAgent } = require('./agent.js');
 const { creerMocky } = require('./mocky.js');
 const { creerKosmyBoard, OidcErreur, LOGIN_PATH, CALLBACK_PATH } = require('./kosmy-board.js');
 const { creerAdminBoard } = require('./kosmy-board-admin.js');
+const { creerUtilisateursBoard, refusRestrictions } = require('./kosmy-board-users.js');
 const VERSION = require('./package.json').version;
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -1474,6 +1475,8 @@ async function parcoursKosmy(req, res, pathname, query) {
     if (err.code === 'non_relie') {
       return pageKosmy(res, 403, 'Compte non relié', `${err.message} Ouvre Calendy avec le jeton d’accès, puis Réglages → Kosmy Board → « Relier à Kosmy Board ».`, { libelle: 'Se connecter avec le jeton' });
     }
+    // Compte désactivé depuis le Board, ou accès donné par le Board impossible à appliquer : la raison, telle quelle.
+    if (err.code === 'desactive' || err.code === 'acces') return pageKosmy(res, 403, 'Accès refusé', err.message);
     if (!['state', 'refuse', 'inactif'].includes(err.code)) console.warn(`Connexion Kosmy Board refusée (${err.code}) : ${err.message}`);
     return pageKosmy(res, err.code === 'refuse' ? 403 : 400, 'Connexion impossible', err.message);
   }
@@ -1506,6 +1509,18 @@ const adminBoard = creerAdminBoard({
     modifierReglages,
     jetonValide: (valeur) => Boolean(TOKEN) && jetonEgal(nettoyerJeton(valeur), TOKEN),
   },
+});
+
+/*
+ * Utilisateurs gérés par Kosmy Board (kosmy-board-users.js, protocole kosmy.board-users.v1) : le Board admet, met à jour
+ * ou désactive les comptes de la liste d'accès, avec le même jeton que l'admin dans le Board. Mêmes règles de passage.
+ */
+const usersBoard = creerUtilisateursBoard({
+  kosmy,
+  OidcErreur,
+  HttpError,
+  envoyer: (res, status, corps) => send(res, status, corps, SECURITY_HEADERS),
+  lireCorps: readBody,
 });
 
 /** Routes /api/kosmy-board/* et /api/session (hors de portée de l'agent IA) ; renvoie true si la requête a été traitée. */
@@ -1581,6 +1596,7 @@ async function handle(req, res) {
 
   if (req.method === 'GET' && (pathname === LOGIN_PATH || pathname === CALLBACK_PATH)) return parcoursKosmy(req, res, pathname, query);
   if (adminBoard.concerne(pathname)) return adminBoard.traiter(req, res, pathname);
+  if (usersBoard.concerne(pathname)) return usersBoard.traiter(req, res, pathname);
 
   if (!pathname.startsWith('/api/')) return send(res, 404, { error: 'Introuvable.' }, SECURITY_HEADERS);
 
@@ -1604,6 +1620,12 @@ async function handle(req, res) {
   }
 
   if (await apiKosmy(req, res, pathname, acces)) return;
+
+  // Restrictions d'un compte Kosmy Board (choisies par un administrateur du Board) : lecture seule, agent IA.
+  if (acces.type === 'kosmy') {
+    const refus = refusRestrictions(req.method, pathname, acces.compte.restrictions);
+    if (refus) return send(res, 403, { error: refus }, SECURITY_HEADERS);
+  }
 
   // Les posts « Planifié » arrivés à échéance passent en « Publié » avant toute lecture ou écriture : on ne voit jamais un état périmé.
   if (pathname !== '/api/health') publierPostsEchus();

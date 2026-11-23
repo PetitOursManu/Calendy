@@ -17,7 +17,13 @@
  * (signature, iss, aud, exp, nonce). Le state ne sert qu'une fois et il est lié au navigateur par un cookie.
  *
  * Admin dans le Board (kosmy-board-admin.js) : authentifierAdmin vérifie le jeton kb-admin+jwt avec les mêmes réglages
- * et les mêmes clés, puis retrouve le compte par son `sub` ; seul un compte relié avec le jeton est administrateur.
+ * et les mêmes clés, puis retrouve le compte par son `sub` ; seul un compte de rôle « admin » est administrateur (relié
+ * avec le jeton, ou nommé administrateur depuis le Board).
+ *
+ * Utilisateurs gérés par le Board (kosmy-board-users.js) : un administrateur du Board admet un compte (PUT), avec un rôle
+ * et des restrictions, ou le désactive (DELETE). Un compte désactivé reste dans la liste mais n'entre plus : connexion
+ * unique refusée, session refusée, admin dans le Board refusée. L'ID token peut porter `kosmy_board_access` : appliqué
+ * à la connexion comme un PUT.
  *
  * Réglages et liste d'accès dans DATA_DIR/kosmy-board.json (fichier séparé de data.json, mode 600).
  * Le secret client n'est jamais renvoyé au navigateur.
@@ -26,6 +32,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { AccesErreur, messageAcces, verifierAcces, roleDe, valeursDe, restrictionsDe, ROLE_ADMIN } = require('./kosmy-board-users.js');
 
 const LOGIN_PATH = '/auth/kosmy-board/login';
 const CALLBACK_PATH = '/auth/kosmy-board/callback';
@@ -238,8 +245,21 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
     return r.cleSession;
   }
 
-  // `par` : « jeton » (relié par « Relier à Kosmy Board », avec le jeton) ou « admission-auto ».
-  const comptepublic = (c) => ({ sub: c.sub, nom: c.nom || '', email: c.email || '', relieLe: c.relieLe || '', derniereConnexion: c.derniereConnexion || '', par: c.par || '' });
+  // `par` : « jeton » (relié par « Relier à Kosmy Board », avec le jeton), « admission-auto » ou « board » (admis par
+  // un administrateur depuis Kosmy Board, kosmy-board-users.js). `role` : « admin » ou « member » (voir roleDe) ;
+  // `actif` : faux pour un compte désactivé depuis le Board (il ne peut plus entrer) ; `restrictions` : celles qui s'appliquent.
+  const comptepublic = (c) => ({
+    sub: c.sub,
+    nom: c.nom || '',
+    email: c.email || '',
+    relieLe: c.relieLe || '',
+    derniereConnexion: c.derniereConnexion || '',
+    par: c.par || '',
+    role: roleDe(c),
+    actif: !c.desactive,
+    ...(c.desactive ? { desactiveLe: c.desactiveLe || '' } : {}),
+    restrictions: restrictionsDe(c),
+  });
 
   /** Réglages montrés dans l'interface (jamais le secret). */
   function publics(base) {
@@ -418,7 +438,19 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
     const date = new Date(maintenant()).toISOString();
     let compte = r.comptes.find((c) => c.sub === claims.sub);
     let nouveau = false;
-    if (!compte) {
+    // Accès géré par le Board (docs/users-api.md) : l'ID token porte le rôle et les restrictions donnés par un
+    // administrateur du Board. Mêmes règles qu'un PUT, compte créé s'il n'existe pas, jamais de liaison par l'e-mail.
+    const accesBoard = claims.kosmy_board_access;
+    if (f.mode === 'connexion' && accesBoard && typeof accesBoard === 'object' && !Array.isArray(accesBoard)) {
+      try {
+        const a = appliquerAccesDans(r, claims.sub, { name: nom, email, role: accesBoard.role, values: accesBoard.values }, { aLaConnexion: true, date });
+        compte = a.compte;
+        nouveau = a.status === 'created';
+      } catch (err) {
+        if (err instanceof AccesErreur) throw new OidcErreur('acces', messageAcces(err));
+        throw err;
+      }
+    } else if (!compte) {
       if (f.mode !== 'relier' && !r.admissionAuto) {
         throw new OidcErreur('non_relie', 'Ce compte Kosmy Board n’est relié à aucun accès Calendy.');
       }
@@ -426,6 +458,10 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
       compte = { sub: claims.sub, relieLe: date, par: f.mode === 'relier' ? 'jeton' : 'admission-auto' };
       r.comptes.push(compte);
       nouveau = true;
+    }
+    // Un compte désactivé depuis le Board n'entre plus, ni par la connexion unique, ni en le reliant à nouveau.
+    if (compte.desactive) {
+      throw new OidcErreur('desactive', 'Ce compte Kosmy Board a été désactivé dans Calendy. Demande à un administrateur de te redonner l’accès depuis Kosmy Board.');
     }
     // Le nom et l'e-mail ne servent qu'à l'affichage : seul `sub` identifie le compte.
     compte.nom = nom;
@@ -466,8 +502,9 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
     let s;
     try { s = decoderPartie(charge); } catch { return null; }
     if (!s || typeof s.exp !== 'number' || s.exp < maintenant()) return null;
+    // Un compte retiré ou désactivé perd aussitôt sa session.
     const compte = r.comptes.find((c) => c.sub === s.sub);
-    return compte ? comptepublic(compte) : null;
+    return compte && !compte.desactive ? comptepublic(compte) : null;
   }
 
   const cookieDeconnexion = (base) => cookie(COOKIE_SESSION, '', { maxAge: 0, secure: base.startsWith('https:') });
@@ -479,8 +516,8 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
 
   /**
    * Authentifie une requête de l'admin dans le Board : jeton (voir verifierJetonAdmin), jti jamais vu, puis
-   * `sub` → compte de la liste d'accès. Renvoie { claims, compte, admin } ; `admin` est vrai pour un compte relié
-   * avec le jeton (« Relier à Kosmy Board »), faux pour un compte admis automatiquement.
+   * `sub` → compte de la liste d'accès. Renvoie { claims, compte, admin, actif } ; `admin` est vrai pour un compte actif
+   * de rôle « admin » (relié avec le jeton, ou nommé administrateur depuis le Board), faux sinon.
    * Lève une OidcErreur : « inactif », « jeton », « non_relie », ou une erreur de découverte.
    */
   async function authentifierAdmin({ autorisation, methode, chemin }) {
@@ -508,10 +545,94 @@ function creerKosmyBoard({ dataDir, HttpError, jetonDefini, fetchImpl = (...a) =
     // Le Board dit qui est la personne ; les droits, c'est Calendy qui les donne.
     const compte = r.comptes.find((c) => c.sub === claims.sub);
     if (!compte) throw new OidcErreur('non_relie', 'Ce compte Kosmy Board n’est relié à aucun accès Calendy.');
-    return { claims, compte: comptepublic(compte), admin: compte.par === 'jeton' };
+    return { claims, compte: comptepublic(compte), admin: roleDe(compte) === ROLE_ADMIN && !compte.desactive, actif: !compte.desactive };
   }
 
-  return { publics, modifier, retirer, demarrer, terminer, session, cookieDeconnexion, authentifierAdmin, actif: () => actif() };
+  /* ---------- utilisateurs gérés par le Board (kosmy-board-users.js) ---------- */
+
+  const adminsActifs = (r) => r.comptes.filter((c) => roleDe(c) === ROLE_ADMIN && !c.desactive).length;
+
+  /**
+   * Admet ou met à jour le compte `sub` dans `r` (sans l'écrire) : rôle, restrictions, nom et e-mail affichés, et
+   * réactivation. Appelée par un PUT du Board (moi = la personne qui agit) et à la connexion quand l'ID token porte
+   * `kosmy_board_access` (aLaConnexion). Calendy n'a pas de compte hors de la liste d'accès : il n'y a jamais rien à
+   * « relier » par l'e-mail ; une adresse déjà portée par un autre compte admis est refusée (409) dans un PUT.
+   * Renvoie { status: 'created' | 'updated', compte }, ou lève une AccesErreur.
+   */
+  function appliquerAccesDans(r, sub, corps, { moi = null, aLaConnexion = false, date = new Date(maintenant()).toISOString() } = {}) {
+    let compte = r.comptes.find((c) => c.sub === sub);
+    const { role, valeurs } = verifierAcces(corps, compte ? valeursDe(compte) : null);
+    const nom = typeof corps.name === 'string' && corps.name.trim() ? corps.name.trim().slice(0, 120) : '';
+    const brut = typeof corps.email === 'string' ? corps.email.trim().slice(0, 200) : '';
+    const email = /^[^\s@]+@[^\s@]+$/.test(brut) ? brut : '';
+    let status = 'updated';
+    let roleFinal = role;
+    if (!compte) {
+      if (!aLaConnexion && email) {
+        const autre = r.comptes.find((c) => c.email && c.email.toLowerCase() === email.toLowerCase());
+        if (autre) throw new AccesErreur(409, 'conflict', 'err.email', { compte: autre.nom || autre.email });
+      }
+      if (r.comptes.length >= COMPTES_MAX) throw new AccesErreur(409, 'conflict', 'err.plein', { n: COMPTES_MAX });
+      compte = { sub, nom: nom || email, email, relieLe: date, par: 'board' };
+      r.comptes.push(compte);
+      status = 'created';
+    } else {
+      // Ne pas se couper l'accès : jamais ses propres droits d'administration, jamais le dernier administrateur actif.
+      const perdAdmin = !compte.desactive && roleDe(compte) === ROLE_ADMIN && role !== ROLE_ADMIN;
+      if (perdAdmin && sub === moi) throw new AccesErreur(409, 'conflict', 'err.soiAdmin');
+      if (perdAdmin && adminsActifs(r) <= 1) {
+        if (!aLaConnexion) throw new AccesErreur(409, 'conflict', 'err.dernierAdmin');
+        // À la connexion, personne à qui répondre 409 : le dernier administrateur garde son rôle, le reste s'applique.
+        console.warn(`Kosmy Board : ${sub} reste administrateur de Calendy (dernier administrateur actif).`);
+        roleFinal = ROLE_ADMIN;
+      }
+      if (nom) compte.nom = nom;
+      if (email) compte.email = email;
+    }
+    compte.role = roleFinal;
+    compte.valeurs = valeurs;
+    delete compte.desactive;
+    delete compte.desactiveLe;
+    return { status, compte };
+  }
+
+  /** PUT /api/kosmy-board/users/{sub} : appliquerAccesDans, puis écriture. */
+  function appliquerAcces(sub, corps, { moi = null } = {}) {
+    const r = lire();
+    const { status, compte } = appliquerAccesDans(r, sub, corps, { moi });
+    ecrire(r);
+    return { status, compte: comptepublic(compte) };
+  }
+
+  /**
+   * DELETE /api/kosmy-board/users/{sub} : désactive le compte (il reste dans la liste, avec son rôle et ses restrictions,
+   * pour être réactivé par un PUT). Sa session cesse aussitôt (session() refuse un compte désactivé).
+   * Renvoie true si un compte a été désactivé, false s'il n'y avait rien à faire ; lève une AccesErreur (409).
+   */
+  function desactiver(sub, { moi = null } = {}) {
+    const r = lire();
+    const compte = r.comptes.find((c) => c.sub === sub);
+    if (!compte || compte.desactive) return false;
+    if (sub === moi) throw new AccesErreur(409, 'conflict', 'err.soi');
+    if (roleDe(compte) === ROLE_ADMIN && adminsActifs(r) <= 1) throw new AccesErreur(409, 'conflict', 'err.dernierAdmin');
+    compte.desactive = true;
+    compte.desactiveLe = new Date(maintenant()).toISOString();
+    ecrire(r);
+    return true;
+  }
+
+  /** Les comptes de la liste d'accès, au format du protocole kosmy.board-users.v1. */
+  function utilisateurs() {
+    return lire().comptes.map((c) => ({
+      sub: c.sub,
+      role: roleDe(c),
+      values: valeursDe(c),
+      active: !c.desactive,
+      ...(c.email || c.nom ? { account: c.email || c.nom } : {}),
+    }));
+  }
+
+  return { publics, modifier, retirer, demarrer, terminer, session, cookieDeconnexion, authentifierAdmin, appliquerAcces, desactiver, utilisateurs, actif: () => actif() };
 }
 
 module.exports = { creerKosmyBoard, verifierIdToken, verifierJetonAdmin, normaliserEmetteur, cibleSure, enteteBasic, defiPkce, OidcErreur, LOGIN_PATH, CALLBACK_PATH, COOKIE_SESSION, COOKIE_FLUX };
