@@ -227,6 +227,7 @@ Règles :
 - Un compte Kosmy Board admis accède au calendrier, mais **pas** aux réglages de la connexion unique ni à la liste des comptes : ils restent réservés au jeton. Aucun droit d'administration n'est jamais donné automatiquement.
 - **Admission automatique** (désactivée par défaut) : tout compte du Board qui a l'espace Calendy relié peut entrer, et rejoint la liste à sa première connexion.
 - **Retirer** un compte de la liste demande de ressaisir le jeton ; sa session Calendy cesse aussitôt de marcher.
+- Un administrateur du Board peut aussi admettre, régler ou désactiver les comptes depuis le Board : voir « Utilisateurs gérés par Kosmy Board ».
 - Un compte qui n'est pas dans la liste voit « Ce compte Kosmy Board n'est relié à aucun accès Calendy ».
 - « Se déconnecter » ferme la session Calendy (cookie de 7 jours) ; la session du Board reste ouverte, et « Ouvrir » reconnecte d'un clic.
 - Derrière un proxy, Calendy déduit son adresse publique de `Host` et `X-Forwarded-Proto`. Si les adresses affichées sont fausses, définis `CALENDY_PUBLIC_URL` (par exemple `https://calendy.mondomaine.fr`) : l'adresse de retour doit être exactement celle saisie dans le Board.
@@ -250,10 +251,24 @@ Restent dans Calendy : choisir le modèle Mocky par défaut et les modèles des 
 Conditions :
 
 - La **connexion unique avec Kosmy Board doit être réglée** dans Calendy (voir ci-dessus) : l'admin dans le Board en reprend l'émetteur, l'identifiant client, les clés de signature du Board et la liste des comptes.
-- Le compte Kosmy Board de la personne doit être **relié avec le jeton** (Réglages → Kosmy Board → « Relier à Kosmy Board ») : c'est lui qui a les droits d'administration. Un compte **admis automatiquement** a accès au calendrier, pas à cette administration ; pour lui comme pour un compte absent de la liste, le Board affiche le message de Calendy qui explique quoi faire.
+- Le compte Kosmy Board de la personne doit être **administrateur** de Calendy : **relié avec le jeton** (Réglages → Kosmy Board → « Relier à Kosmy Board »), ou nommé **Administrateur** depuis le Board (voir ci-dessous). Un compte **admis automatiquement** ou **membre** a accès au calendrier, pas à cette administration ; pour lui comme pour un compte absent de la liste ou désactivé, le Board affiche le message de Calendy qui explique quoi faire.
 - Le serveur du Board doit pouvoir joindre Calendy à l'adresse de l'espace.
 
 Côté protocole : `GET /api/kosmy-board/admin` (le sommaire), `GET` et `POST /api/kosmy-board/admin/{section}`. Chaque requête porte un jeton du Board (`Authorization: Bearer`) signé avec la clé de ses ID tokens, vérifié par Calendy : RS256 seulement, `typ` = `kb-admin+jwt` (un ID token est refusé), `iss`, `aud` = l'identifiant client, `exp` (30 secondes de tolérance), `htm` = la méthode, `htu` = l'adresse appelée, `jti` à usage unique (gardé en mémoire jusqu'à son expiration), puis `sub` → compte relié → droits. Erreurs en JSON (`invalid_token`, `not_linked`, `forbidden`, `not_found`…), sans CORS ni redirection ; textes en français ou en anglais selon `Accept-Language`. Chaque action est notée dans le journal du serveur avec le nom du compte.
+
+## Utilisateurs gérés par Kosmy Board
+
+Un administrateur du Board peut donner l'accès à Calendy depuis le Board lui-même, avec un **rôle** et des **restrictions** propres à Calendy, ou le retirer (protocole `kosmy.board-users.v1`, voir la [spécification](https://github.com/PetitOursManu/Kosmy-Board/blob/main/docs/users-api.md)). Le Board crée alors le compte dans la liste des comptes admis (sans mot de passe : on entre par le Board), le met à jour ou le désactive.
+
+- **Rôles** : **Administrateur** (le calendrier, et l'administration de Calendy depuis le Board : réglages et comptes) et **Membre** (le calendrier). Un compte relié avec le jeton est administrateur, un compte admis automatiquement est membre, tant que le Board n'a rien choisi d'autre.
+- **Restrictions d'un membre**, appliquées par le serveur à chaque requête de sa session : **Lecture seule** (il consulte et exporte le calendrier, sans rien modifier : posts, événements, images, réglages, agent IA) et **Peut utiliser l'agent IA** (sinon, la discussion avec l'agent est refusée et son bouton n'est pas affiché).
+- **Retirer l'accès** désactive le compte : il reste dans la liste (avec son rôle et ses restrictions), mais sa session cesse aussitôt, la connexion par le Board lui est refusée, et l'admin dans le Board aussi. Redonner l'accès depuis le Board le réactive.
+- Garde-fous : on ne peut ni se retirer ses propres droits d'administration, ni retirer son propre accès, et Calendy garde toujours au moins un administrateur actif (`409` avec un message).
+- À la connexion, l'ID token du Board porte le rôle et les restrictions (`kosmy_board_access`) : Calendy les applique et crée le compte s'il n'existe pas encore, même sans admission automatique. Sans cette revendication, rien ne change.
+- Un compte est toujours reconnu par son `sub`, jamais par son e-mail : Calendy n'a pas de comptes hors de cette liste, il n'y a donc jamais de compte existant à relier par l'adresse. Une adresse déjà portée par un autre compte admis est refusée (`409`).
+- Le jeton d'accès `CALENDY_TOKEN` garde l'accès complet, sans restriction.
+
+Côté protocole : `GET /api/kosmy-board/users` (rôles, restrictions et comptes), `PUT` et `DELETE /api/kosmy-board/users/{sub}`, avec le même jeton du Board que l'admin (`htm` et `htu` propres à chaque requête) ; la personne qui agit (`sub` du jeton) doit être un administrateur actif de Calendy. Messages en français ou en anglais selon `Accept-Language`. Chaque création, mise à jour ou désactivation est notée dans le journal du serveur.
 
 ## Variables d'environnement
 
@@ -275,7 +290,7 @@ Pour le connecteur : `CALENDY_URL` (défaut `http://127.0.0.1:3000`), `CALENDY_T
 ## Pour les développeurs
 
 ```bash
-npm test                # 117 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion et admin Kosmy Board
+npm test                # 131 tests : API, photos, clonage, fusion, export Excel, connecteur MCP, historique, agent IA, visuels Mocky, connexion, admin et utilisateurs Kosmy Board
 npm run build:mcp       # régénère dist/calendy-mcp.js après un changement de mcp.js
 npm run test:bundle     # relance les tests du connecteur sur le fichier empaqueté
 ```
@@ -309,13 +324,14 @@ API REST, sous `/api` (JSON, en-tête `Authorization: Bearer <jeton>` si un jeto
 | `GET /posts/:id/canva/meta` (idem `linkedin`) | Télécharge le fichier Canva (.pptx) du visuel Mocky |
 | `GET /export.xlsx` | Export Excel : `statuts` (`valide,planifie,publie` par défaut, ou `all`), `du`, `au`, `photos=0` pour exclure les photos |
 | `GET /health` | Contrôle de santé, sans jeton |
-| `GET /session` | Qui est connecté : `{ acces: "jeton" \| "kosmy" \| "ouvert", compte, kosmyBoard }` |
+| `GET /session` | Qui est connecté : `{ acces: "jeton" \| "kosmy" \| "ouvert", compte, kosmyBoard }` (pour une session Kosmy Board, `compte` donne aussi `role`, `actif` et `restrictions`) |
 | `GET /kosmy-board/etat` | Sans jeton : `{ actif }`, la connexion par Kosmy Board est-elle proposée |
 | `GET/PUT /kosmy-board/reglages` | Jeton seulement. Émetteur, identifiant client, secret (jamais renvoyé ; vide = inchangé, `null` = retiré), `admissionAuto`, adresses de retour et de lancement, comptes admis |
 | `POST /kosmy-board/relier` | Jeton seulement. Répond `{ url }` : l'adresse du Board où envoyer le navigateur pour relier un compte |
 | `POST /kosmy-board/retirer` | Jeton seulement : `{ "sub": "…", "jeton": "…" }` (le jeton est redemandé) |
 | `POST /kosmy-board/deconnexion` | Ferme la session ouverte par Kosmy Board |
 | `GET /kosmy-board/admin`, `GET/POST /kosmy-board/admin/{section}` | Admin dans Kosmy Board : jeton du Board seulement (pas `CALENDY_TOKEN` ni la session), voir « Admin dans Kosmy Board » |
+| `GET /kosmy-board/users`, `PUT/DELETE /kosmy-board/users/{sub}` | Utilisateurs gérés par Kosmy Board : jeton du Board seulement, voir « Utilisateurs gérés par Kosmy Board » |
 
 Hors de `/api` : `GET /auth/kosmy-board/login` (accepte `iss` et `target_link_uri`) et `GET /auth/kosmy-board/callback`.
 

@@ -2740,10 +2740,16 @@ const agentPret = () => {
   return Boolean(a && a.cles[a.fournisseur].definie && a.modeles[a.fournisseur]);
 };
 
+/** Une session Kosmy Board en lecture seule, ou sans l'agent IA, ne voit pas l'agent (le serveur le refuse aussi). */
+const agentInterdit = () => {
+  const r = state.session && state.session.compte && state.session.compte.restrictions;
+  return Boolean(r && (r.lectureSeule || r.agentIA === false));
+};
+
 function majDockAgent() {
   const a = state.agent;
   const fab = $('#iaFab');
-  fab.hidden = !(a && a.actif);
+  fab.hidden = !(a && a.actif) || agentInterdit();
   if (fab.hidden && chat.ouvert) basculerChat(false);
   if (a) {
     $('#iaNom').textContent = a.nom;
@@ -3271,6 +3277,22 @@ async function remplirSecours(form) {
 /* ================= connexion avec Kosmy Board ================= */
 const dateCourte = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
+/** Les droits d'un compte Kosmy Board, en une phrase : rôle et restrictions choisis depuis le Board. */
+function droitsKosmy(c) {
+  if (c.role === 'admin') return 'Administrateur : tu as aussi accès à l’administration de Calendy depuis Kosmy Board.';
+  const r = c.restrictions || {};
+  if (r.lectureSeule) return 'Accès en <strong>lecture seule</strong> : tu peux consulter et exporter le calendrier, pas le modifier.';
+  return r.agentIA === false ? 'Accès au calendrier, sans l’agent IA.' : 'Accès au calendrier.';
+}
+
+/** Rôle et état d'un compte dans la liste des comptes admis. */
+function etatCompteKosmy(c) {
+  if (c.actif === false) return ' · <strong>désactivé</strong> depuis Kosmy Board';
+  if (c.role === 'admin') return ' · administrateur';
+  const r = c.restrictions || {};
+  return r.lectureSeule ? ' · lecture seule' : r.agentIA === false ? ' · sans agent IA' : '';
+}
+
 function afficherReglagesKosmy(main, entete) {
   const s = state.session;
   if (!s || (s.acces === 'jeton' && !state.kosmy)) { main.innerHTML = `${entete}<p class="loading">Chargement des réglages…</p>`; return; }
@@ -3279,6 +3301,7 @@ function afficherReglagesKosmy(main, entete) {
     main.innerHTML = `${entete}<div class="reglages" data-reglages="kosmy">
       <h3>Connexion avec Kosmy Board</h3>
       <p>Tu es connecté·e avec Kosmy Board : <strong>${esc(c.nom || c.email)}</strong>${c.email && c.nom ? ` (${esc(c.email)})` : ''}.</p>
+      <p>${droitsKosmy(c)}</p>
       <p class="hint">Les réglages de la connexion unique et la liste des comptes admis sont réservés à une connexion avec le jeton d’accès de Calendy.</p>
       <div class="boutons"><button type="button" class="btn" data-action="kb-deconnexion">Se déconnecter de Calendy</button></div>
       <p class="hint">Ta session sur Kosmy Board reste ouverte : « Ouvrir » depuis le Board te reconnecte d’un clic.</p>
@@ -3296,7 +3319,7 @@ function afficherReglagesKosmy(main, entete) {
   const k = state.kosmy;
   const adresse = (nom, url) => `<div class="kb-adresse"><span>${esc(nom)}</span><div><code>${esc(url)}</code>${boutonCopie(`data-action="kb-copier" data-texte="${esc(url)}"`, nom.toLowerCase())}</div></div>`;
   const comptes = k.comptes.length
-    ? `<ul class="kb-comptes">${k.comptes.map((c) => `<li class="kb-compte"><div><strong>${esc(c.nom || c.email || 'Compte Kosmy Board')}</strong><span class="hint">${esc(c.email)}${c.email ? ' · ' : ''}relié le ${esc(dateCourte(c.relieLe))}${c.derniereConnexion ? ` · dernière connexion le ${esc(dateCourte(c.derniereConnexion))}` : ''}</span></div><button type="button" class="btn small no" data-action="kb-retirer" data-sub="${esc(c.sub)}" data-nom="${esc(c.nom || c.email)}">Retirer</button></li>`).join('')}</ul>`
+    ? `<ul class="kb-comptes">${k.comptes.map((c) => `<li class="kb-compte"><div><strong>${esc(c.nom || c.email || 'Compte Kosmy Board')}</strong><span class="hint">${esc(c.email)}${c.email ? ' · ' : ''}relié le ${esc(dateCourte(c.relieLe))}${c.derniereConnexion ? ` · dernière connexion le ${esc(dateCourte(c.derniereConnexion))}` : ''}${etatCompteKosmy(c)}</span></div><button type="button" class="btn small no" data-action="kb-retirer" data-sub="${esc(c.sub)}" data-nom="${esc(c.nom || c.email)}">Retirer</button></li>`).join('')}</ul>`
     : '<p class="hint">Aucun compte relié pour l’instant.</p>';
   main.innerHTML = `${entete}<form class="reglages reglages-mocky" id="reglagesKosmy" data-reglages="kosmy" novalidate>
     <p class="hint">Avec la connexion unique, les comptes Kosmy Board admis ouvrent Calendy depuis leur Board, sans jeton. Dans Kosmy Board : ajoute l’espace Calendy, ouvre Modifier → Connexion unique, active-la, puis colle ici les trois réglages affichés.</p>
@@ -3314,7 +3337,7 @@ function afficherReglagesKosmy(main, entete) {
       <p class="hint">${k.actif ? 'La connexion avec Kosmy Board est active.' : 'Inactive : l’émetteur, l’identifiant et le secret client sont nécessaires.'}</p>
     </section>
     <section class="regl-section"><h3>Comptes Kosmy Board admis</h3>
-      <p class="hint">Ils sont reconnus par leur identifiant Kosmy Board, jamais par leur e-mail. Ils ont accès au calendrier, pas à ces réglages.</p>
+      <p class="hint">Ils sont reconnus par leur identifiant Kosmy Board, jamais par leur e-mail. Ils ont accès au calendrier, pas à ces réglages. Un administrateur du Board peut aussi admettre des comptes, choisir leur rôle et leurs restrictions, ou les désactiver.</p>
       ${comptes}
       <div class="boutons"><button type="button" class="btn" data-action="kb-relier"${k.actif ? '' : ' disabled'}>${icon('i-kosmy')}Relier à Kosmy Board</button></div>
       <p class="hint">Calendy t’envoie sur Kosmy Board : le compte avec lequel tu y es connecté·e est ajouté à la liste.</p>
@@ -3337,6 +3360,7 @@ async function chargerSession() {
   const c = state.session.compte;
   el.hidden = state.session.acces !== 'kosmy';
   el.innerHTML = c ? `${icon('i-kosmy')}<span>${esc(c.nom || c.email)}</span><button type="button" class="btn small" data-action="kb-deconnexion">Se déconnecter</button>` : '';
+  majDockAgent();
   rafraichirKosmy();
 }
 
